@@ -1,0 +1,9 @@
+[Unit]
+Description=Claude HUD Health Auditor
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node {{INSTALL_DIR}}/src/health/index.js
+
+[Install]
+WantedBy=default.target

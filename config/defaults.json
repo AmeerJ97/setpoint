@@ -1,0 +1,72 @@
+{
+  "hud": {
+    "layout": "vertical",
+    "minWidth": 80,
+    "showAllLines": true,
+    "abbreviateOnNarrow": true,
+    "narrowThreshold": 100
+  },
+  "colors": {
+    "active": "\u001b[1m",
+    "inactive": "\u001b[2m",
+    "green": "\u001b[32m",
+    "yellow": "\u001b[33m",
+    "red": "\u001b[31m",
+    "cyan": "\u001b[36m",
+    "reset": "\u001b[0m"
+  },
+  "analytics": {
+    "historyFile": "~/.claude/plugins/claude-hud/usage-history.jsonl",
+    "writeIntervalSec": 300,
+    "rollingWindowHours": 5,
+    "rollingWindowDays": 7
+  },
+  "advisor": {
+    "thresholds": {
+      "fiveHour": { "safe": 70, "warning": 90 },
+      "sevenDay": { "safe": 50, "warning": 80 },
+      "burnRate": { "low": 200, "high": 500 }
+    },
+    "autoAdjust": false
+  },
+  "pricing": {
+    "defaultModel": "claude-opus-4-7",
+    "models": {
+      "claude-opus-4-7":   { "input": 15.00, "output": 75.00, "cacheCreate": 18.75, "cacheRead": 1.50 },
+      "claude-opus-4-6":   { "input": 15.00, "output": 75.00, "cacheCreate": 18.75, "cacheRead": 1.50 },
+      "claude-sonnet-4-6": { "input":  3.00, "output": 15.00, "cacheCreate":  3.75, "cacheRead": 0.30 },
+      "claude-haiku-4-5":  { "input":  1.00, "output":  5.00, "cacheCreate":  1.25, "cacheRead": 0.10 }
+    }
+  },
+  "rates": {
+    "activeHoursPerDay": 10,
+    "classifyLevel": {
+      "critical": 90,
+      "tight": 70,
+      "watch": 50
+    }
+  },
+  "guard": {
+    "logFile": "/tmp/claude-quality-guard.log",
+    "serviceName": "claude-quality-guard",
+    "categories": {
+      "brevity": "Prevents brevity enforcer from shortening responses",
+      "quiet": "Disables quiet modes that suppress tool output",
+      "summarize": "Prevents tool result compression/summarization",
+      "maxtokens": "Sets max output tokens to 128K",
+      "truncation": "Sets tool output truncation cap to 500K",
+      "refresh_ttl": "Extends refresh TTL to 1 year",
+      "mcp_connect": "Disables cloud MCP connectors",
+      "bridge": "Disables Claude Desktop bridge",
+      "grey_step": "Disables effort reducer v1",
+      "grey_step2": "Disables medium effort override",
+      "grey_wool": "Disables effort reducer v3",
+      "thinking": "Restores thinking budget to 128K",
+      "willow_mode": "Disables capability downgrade mode",
+      "compact_max": "Sets compaction survival to 200K tokens",
+      "compact_init": "Sets compaction trigger to 500K tokens",
+      "tool_persist": "Preserves tool results across compaction",
+      "chomp": "Enables adaptive processing"
+    }
+  }
+}

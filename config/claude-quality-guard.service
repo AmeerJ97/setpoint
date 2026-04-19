@@ -1,0 +1,15 @@
+[Unit]
+Description=Claude Quality Guard
+After=network.target
+
+[Service]
+Type=simple
+# Run the watch loop in the foreground so systemd can supervise the process.
+# Explicit /bin/bash prefix avoids reliance on the exec bit of the script,
+# and matches the pattern used by the other unit files in this repo.
+ExecStart=/bin/bash {{INSTALL_DIR}}/src/guard/claude-quality-guard.sh _watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

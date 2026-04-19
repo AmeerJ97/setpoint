@@ -1,0 +1,36 @@
+{
+  "name": "setpoint",
+  "version": "1.0.0",
+  "description": "Setpoint keeps your Claude Code configuration at the values it was meant to have — statusLine HUD, GrowthBook guard, analytics, anomaly detector, health auditor, daily advisor.",
+  "type": "module",
+  "main": "src/hud/renderer.js",
+  "bin": {
+    "setpoint": "src/cli/index.js"
+  },
+  "scripts": {
+    "start": "node src/hud/renderer.js",
+    "test": "node --test --test-reporter=spec",
+    "health": "node src/health/index.js",
+    "advisor": "node src/advisor/index.js"
+  },
+  "keywords": [
+    "claude-code",
+    "statusline",
+    "observability",
+    "feature-flag",
+    "control-loop"
+  ],
+  "author": "AJ (AmeerJ97)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AmeerJ97/setpoint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AmeerJ97/setpoint/issues"
+  },
+  "homepage": "https://github.com/AmeerJ97/setpoint#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

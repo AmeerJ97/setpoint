@@ -1,0 +1,4 @@
+node_modules/
+*.log
+.claude/
+.claude.json

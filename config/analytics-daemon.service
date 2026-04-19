@@ -1,0 +1,12 @@
+[Unit]
+Description=Claude HUD Analytics Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node {{INSTALL_DIR}}/src/analytics/daemon.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

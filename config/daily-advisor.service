@@ -1,0 +1,9 @@
+[Unit]
+Description=Claude HUD Daily Advisor
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node {{INSTALL_DIR}}/src/advisor/index.js
+
+[Install]
+WantedBy=default.target

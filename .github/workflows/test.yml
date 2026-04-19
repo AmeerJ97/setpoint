@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Zero runtime deps, but `npm install` is still a useful
+      # sanity check that package.json parses and no devDeps creep in.
+      - name: Install (noop; zero runtime deps)
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Smoke-test HUD rendering
+        run: |
+          echo '{"session_id":"ci","model":{"id":"claude-opus-4-7","display_name":"Opus 4.7"},"context_window":{"context_window_size":200000,"used_percentage":10,"current_usage":{"input_tokens":100,"output_tokens":50}},"rate_limits":{"five_hour":{"used_percentage":5},"seven_day":{"used_percentage":3}}}' \
+            | node src/cli/index.js
+        env:
+          # Force ansi16 so output is deterministic regardless of runner
+          TERM: xterm
+
+      - name: Smoke-test guard-status subcommand
+        run: |
+          # In CI ~/.claude.json doesn't exist; guard-status should still
+          # run cleanly and exit non-zero for drift (expected).
+          node src/cli/index.js guard status || true
