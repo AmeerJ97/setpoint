@@ -1,35 +1,41 @@
 /**
  * Combined consumption+projection gauge.
  *
- *   ▕████▓▓░──┤78┤░░░▏
- *    │   │   │    │
- *    │   │   │    └─ headroom (dim)
- *    │   │   └─ projection anchor (inverted-video label)
- *    │   └─ projected delta (mid shade)
- *    └─ consumed (colored by level)
+ *   ▕█████████▓▓░░░░░▏ 62→78
+ *    │        │   │
+ *    │        │   └─ headroom (░, dim so the consumed block pops)
+ *    │        └─ projected delta (▓, mid shade)
+ *    └─ consumed (solid █ in the band's state color)
  *
- * Used by both the Usage line (5h / 7d windows) and the Advisor line
- * (most-pressing window). Level color comes from a state-keyed lookup
- * (ok/watch/tight/critical) so the same primitive works for both
- * semantic and gradient palettes.
+ * Used on the Usage line (5h / 7d windows) and the Advisor line. The
+ * level argument drives color; if omitted, it's derived from `current`
+ * against the same thresholds as getQuotaColor — so a 62% bar is
+ * always yellow regardless of whether an advisory level has been
+ * computed yet.
  */
 
-import { dim, RESET, setColorMode as _unused } from './colors.js';
+import { dim, RESET } from './colors.js';
 import { getPalette } from './palettes.js';
 import { detectPalette } from './capability.js';
-import { ansiTrueColor, ansi256FromRgb } from './gradient.js';
+import { ansiTrueColor } from './gradient.js';
 
 const LEVEL_TO_STATE = {
   ok: 'ok', watch: 'info', tight: 'warn', critical: 'critical', hit: 'critical',
 };
 
+/**
+ * Derive a level from a current percentage using quota thresholds:
+ * 0–49 → ok, 50–79 → tight (warn), 80+ → critical.
+ */
+function levelFromCurrent(pct) {
+  if (pct >= 80) return 'critical';
+  if (pct >= 50) return 'tight';
+  return 'ok';
+}
+
 function stateEscape(state) {
   const rgb = getPalette(detectPalette()).stateColor(state);
   if (!rgb) return '';
-  // We pick truecolor unconditionally here because gauge callers have
-  // already screened for color support upstream via coloredBar / dim()
-  // behaviour. If the overall mode is 'none', dim() will strip escapes
-  // and the bar degrades to plain block characters.
   return ansiTrueColor(rgb);
 }
 
@@ -44,7 +50,7 @@ function stateEscape(state) {
  * @param {number} [opts.width=16]      — rail width in cells
  * @returns {string}
  */
-export function combinedGauge({ label, current, projected, level = 'ok', width = 16 }) {
+export function combinedGauge({ label, current, projected, level, width = 16 }) {
   const curPct = Math.max(0, Math.min(100, current ?? 0));
   const projPct = projected != null
     ? Math.max(curPct, Math.min(100, projected * 100))
@@ -55,20 +61,28 @@ export function combinedGauge({ label, current, projected, level = 'ok', width =
   const deltaCells = Math.max(0, projCells - curCells);
   const tailCells  = Math.max(0, width - curCells - deltaCells);
 
-  const state = LEVEL_TO_STATE[level] ?? 'ok';
+  const resolvedLevel = level ?? levelFromCurrent(curPct);
+  const state = LEVEL_TO_STATE[resolvedLevel] ?? 'ok';
   const color = stateEscape(state);
 
   const filled = color + '█'.repeat(curCells) + RESET;
-  const delta = deltaCells > 0 ? dim('▓'.repeat(deltaCells)) : '';
-  const tail = tailCells > 0 ? dim('─'.repeat(tailCells)) : '';
+  // Projection delta: same state color but mid-density block. Reads
+  // as "this is where the consumed band is heading" without washing out.
+  const delta = deltaCells > 0 ? color + '▓'.repeat(deltaCells) + RESET : '';
+  // Headroom: dim ░ — solid enough to frame the filled bar, dim
+  // enough that the consumed segment pops.
+  const tail = tailCells > 0 ? dim('░'.repeat(tailCells)) : '';
 
   const cap0 = dim('▕');
   const cap1 = dim('▏');
 
+  // Value label matches the bar's color so the number reads at a glance.
+  const numStr = projected != null && projected > 0 && curPct > 0
+    ? `${Math.round(curPct)}→${Math.round(projPct)}`
+    : `${Math.round(curPct)}%`;
+  const value = ` ${color}${numStr}${RESET}`;
+
   const labelChip = label ? `${dim(label)} ` : '';
-  const value = projected != null && projected > 0 && curPct > 0
-    ? ` ${dim(`${Math.round(curPct)}→${Math.round(projPct)}`)}`
-    : ` ${dim(`${Math.round(curPct)}%`)}`;
 
   return `${labelChip}${cap0}${filled}${delta}${tail}${cap1}${value}`;
 }

@@ -36,10 +36,19 @@ export function renderUsageLine(ctx) {
   const advisory = ctx.advisory;
   const railWidth = narrow ? 10 : 14;
 
+  // Pass advisory level only when it was actually derived from a
+  // real projection (rates.js returns null when resetAt is missing,
+  // advisor.js then fills a placeholder with level='ok' — which
+  // produces false green bars at 62%+). When that placeholder is in
+  // play, hand undefined to the gauge so it derives level from the
+  // actual current%.
+  const fhLevel = advisory?.fiveHour?.current != null ? advisory.fiveHour.level : undefined;
+  const sdLevel = advisory?.sevenDay?.current != null ? advisory.sevenDay.level : undefined;
+
   const five = formatWindow('5h', usage.fiveHour, usage.fiveHourResetAt,
-    advisory?.fiveHour?.projected, advisory?.fiveHour?.level, railWidth);
+    advisory?.fiveHour?.projected, fhLevel, railWidth);
   const seven = formatWindow('7d', usage.sevenDay, usage.sevenDayResetAt,
-    advisory?.sevenDay?.projected, advisory?.sevenDay?.level, railWidth);
+    advisory?.sevenDay?.projected, sdLevel, railWidth);
 
   return `${dim(label)} ${five} ${dim('│')} ${seven}`;
 }
@@ -52,7 +61,7 @@ function formatWindow(name, current, resetAt, projected, level, railWidth) {
     label: name,
     current,
     projected,
-    level: level ?? 'ok',
+    level,  // undefined → combinedGauge derives from `current` via quota thresholds
     width: railWidth,
   });
   const reset = formatResetTime(resetAt);

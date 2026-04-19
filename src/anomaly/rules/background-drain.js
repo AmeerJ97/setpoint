@@ -17,23 +17,28 @@ import { homedir } from 'node:os';
 export function checkBackgroundDrain() {
   const alerts = [];
 
-  // 1. Check Cowork scheduled tasks enabled (config file only — no process interaction)
+  // 1. Cowork / CCD scheduled tasks — only a real drain when Claude
+  //    Desktop is actually running. The config flag can linger from a
+  //    past Desktop install long after the app is quit; firing on the
+  //    flag alone is a false positive.
   try {
     const desktopConfig = JSON.parse(
       readFileSync(join(homedir(), '.config/Claude/claude_desktop_config.json'), 'utf8')
     );
     const prefs = desktopConfig.preferences || {};
-    if (prefs.coworkScheduledTasksEnabled === true) {
+    const desktopRunning = isClaudeDesktopRunning();
+
+    if (desktopRunning && prefs.coworkScheduledTasksEnabled === true) {
       alerts.push({
         triggered: true,
-        message: 'Cowork scheduled tasks ENABLED — consuming quota in background',
+        message: 'Cowork scheduled tasks ENABLED (Desktop running) — consuming quota in background',
         severity: 'critical',
       });
     }
-    if (prefs.ccdScheduledTasksEnabled === true) {
+    if (desktopRunning && prefs.ccdScheduledTasksEnabled === true) {
       alerts.push({
         triggered: true,
-        message: 'CCD scheduled tasks ENABLED — consuming quota in background',
+        message: 'CCD scheduled tasks ENABLED (Desktop running) — consuming quota in background',
         severity: 'critical',
       });
     }
@@ -80,6 +85,21 @@ export function checkBackgroundDrain() {
   // interfere with the Desktop app. The config flag check above is sufficient.
 
   return alerts;
+}
+
+/**
+ * Is Claude Desktop actually running? Non-blocking pgrep; returns false
+ * if pgrep exits non-zero (no match) or anything goes wrong.
+ */
+function isClaudeDesktopRunning() {
+  try {
+    execFileSync('pgrep', ['-f', 'claude-desktop|Claude Desktop|claude_desktop|cowork-vm|ccd-vm'], {
+      encoding: 'utf8',
+      timeout: 1000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return true;
+  } catch { return false; }
 }
 
 function findRecentJsonl(dir, cutoff, results, depth) {

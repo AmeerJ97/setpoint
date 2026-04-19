@@ -44,31 +44,38 @@ function firstRowOrZero(models) {
 
 /**
  * Calculate session cost from token counts.
+ *
+ * Only counts input + output tokens. Cache reads and cache writes are
+ * excluded by design: on Max / Pro subscriptions you don't pay per
+ * token, and cache_read is a cumulative counter (every turn re-reads
+ * the entire cached context) that balloons into hundreds of dollars
+ * for long sessions — producing a number that's arithmetically correct
+ * against API billing but meaningless as a "what is this session
+ * costing me" signal. What the user cares about is generation spend,
+ * which is what input + output tracks.
+ *
  * @param {object} stats
  * @param {number} [stats.totalInput=0]
  * @param {number} [stats.totalOutput=0]
- * @param {number} [stats.totalCacheCreate=0]
- * @param {number} [stats.totalCacheRead=0]
  * @param {string} [modelName] - when omitted, uses pricing.defaultModel
- * @returns {number} cost in USD
+ * @returns {number} cost in USD (generation only)
  */
 export function calculateCost(stats, modelName) {
   if (!stats) return 0;
   const p = resolvePricing(modelName);
-  const input       = (stats.totalInput       ?? 0) / 1_000_000 * p.input;
-  const output      = (stats.totalOutput      ?? 0) / 1_000_000 * p.output;
-  const cacheCreate = (stats.totalCacheCreate ?? 0) / 1_000_000 * p.cacheCreate;
-  const cacheRead   = (stats.totalCacheRead   ?? 0) / 1_000_000 * p.cacheRead;
-  return input + output + cacheCreate + cacheRead;
+  const input  = (stats.totalInput  ?? 0) / 1_000_000 * p.input;
+  const output = (stats.totalOutput ?? 0) / 1_000_000 * p.output;
+  return input + output;
 }
 
 /**
- * Format cost as string.
+ * Format cost as string, prefixed with ~ to make the "reference not
+ * bill" framing unambiguous.
  * @param {number} cost
  * @returns {string}
  */
 export function formatCost(cost) {
-  if (cost >= 10) return `$${cost.toFixed(0)}`;
-  if (cost >= 1) return `$${cost.toFixed(1)}`;
-  return `$${cost.toFixed(2)}`;
+  if (cost >= 10)  return `~$${cost.toFixed(0)}`;
+  if (cost >= 1)   return `~$${cost.toFixed(1)}`;
+  return `~$${cost.toFixed(2)}`;
 }
