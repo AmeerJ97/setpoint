@@ -102,28 +102,15 @@ Single recommendation synthesised from rate projections and anomaly state.
 - Red `⚠ throttle — will hit 5hr limit in 40min`
 - Red `⚠ ALERT: <anomaly>` — anomaly alerts override the normal advisor
 
-## Two-Column Layout (≥ 100 chars)
+## Single-Column Layout
 
-When terminal width is 100+ characters, a secondary column appears to
-the right of each line, separated by a dim `│`. The right column shows
-complementary data that doesn't fit in the primary display.
-
-| Line    | Right Column                                       |
-|---------|----------------------------------------------------|
-| Model   | Session duration, cumulative cost, output speed    |
-| Context | Peak context this session, context window size    |
-| Usage   | Projected % at reset for both windows             |
-| Tokens  | Thinking turns, agent spawns, cumulative cost      |
-| Env     | Model ID, context window size                      |
-| MCPs    | Unused count, failure count from health report     |
-| Guard   | Activation rate (per day)                          |
-| Advisor | Projected 5h/7d %, burn level (low/med/high)       |
-
-Right column values are dim by default, with color highlights only
-when noteworthy (e.g. projected usage > 90% shows red).
-
-The left column is padded to align the separator. Left column width
-is capped at 60% of terminal width to ensure the right column has room.
+The HUD renders as eight single-line rows regardless of terminal width.
+Lines wider than the terminal wrap at separator boundaries (see
+`wrapLineToWidth` in `src/display/text.js`). A prior two-column layout was
+removed after it proved brittle in the Claude Code statusLine subprocess
+environment (no TTY, unreliable width detection) — the breakdown data that
+once lived in a right column now surfaces via the `setpoint context` CLI
+(2D bucket grid) and the drilldown lines inside `setpoint guard status`.
 
 ## Narrow Terminal Handling (< 100 chars)
 

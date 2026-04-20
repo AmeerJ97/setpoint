@@ -31,8 +31,11 @@ The visible terminal HUD. 8+ always-visible vertically-stacked lines.
 - Session cost estimate: cumulative token cost at API-equivalent pricing
 
 ### 2. Quality guard (`src/guard/`)
-Watches ~/.claude.json via inotifywait (Linux inotify). Re-applies quality overrides
-within <500ms of any GrowthBook revert. Runs as a systemd user service.
+Watches ~/.claude.json via inotify (Linux). Re-applies quality overrides within
+~5ms (Rust impl) or ~100ms (bash fallback) of any GrowthBook revert. Runs as a
+systemd user service. The Rust core at `src/guard/rust/` is the primary impl
+built by `scripts/build-guard.sh`; the bash script at
+`src/guard/claude-quality-guard.sh` is the fallback used when cargo is missing.
 
 **Default state: DISABLED.** The guard is installed but does not run until explicitly
 started. This prevents unintended interference with Claude Code's normal operation.
@@ -47,8 +50,8 @@ at `~/.claude/plugins/claude-hud/guard-disabled`.
 | quiet | `tengu_sotto_voce`, `quiet_fern`, `quiet_hollow` | `false` |
 | summarize | `tengu_summarize_tool_results` | `false` (critical — prevents tool output compression) |
 | maxtokens | `tengu_amber_wren.maxTokens` | `128000` |
-| truncation | `tengu_pewter_kestrel.global` | `500000` |
-| refresh_ttl | `tengu_willow_refresh_ttl_hours` | `8760` (1 year) |
+| truncation | `tengu_pewter_kestrel.*` (all per-tool subkeys — `global`, `Bash`, `PowerShell`, `Grep`, `Snip`, `StrReplaceBasedEditTool`, `BashSearchTool`) | `500000` |
+| refresh_ttl | `tengu_willow_refresh_ttl_hours` + `tengu_willow_census_ttl_hours` (the former was the live key pre-Apr 2026; both are set for forward compat) | `8760` (1 year) |
 | mcp_connect | `tengu_claudeai_mcp_connectors` | `false` |
 | bridge | `bridge.enabled` | `false` |
 | grey_step | `tengu_grey_step` | `false` (effort reducer v1) |
@@ -62,10 +65,12 @@ at `~/.claude/plugins/claude-hud/guard-disabled`.
 | chomp | `tengu_chomp_inflection` | `true` (adaptive processing) |
 
 **Configurability:**
-Run `src/guard/claude-quality-guard.sh config` to see all categories with `[ON]`/`[OFF]` status.
-Disable a category: `guard.sh skip <category>`
-Re-enable: `guard.sh unskip <category>`
-Restore defaults: `guard.sh reset`
+Run `setpoint-guard config` (or the bash fallback's `claude-quality-guard.sh config`)
+to see all categories with `[ON]`/`[OFF]` status.
+Disable a category: `setpoint-guard skip <category>`
+Re-enable: `setpoint-guard unskip <category>`
+Restore defaults: `setpoint-guard reset`
+Inspect live drift: `setpoint guard status` (Node CLI, reads the same state).
 
 **Metrics exposed to display:**
 - Activation count (today / this session)
@@ -174,7 +179,7 @@ Claude Code ──stdin──→ Display engine (renders 8 lines)
                           ↑ reads
                     Daily advisor (runs every 24h active usage)
                     
-~/.claude.json ──inotify──→ Quality guard (re-applies <500ms)
+~/.claude.json ──inotify──→ Quality guard (Rust: <5ms; bash fallback: ~100ms)
                                ↑ logs to
                           /tmp/claude-quality-guard.log
                                ↑ reads

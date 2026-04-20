@@ -22,8 +22,12 @@ A *setpoint* is the target value a controller maintains against disturbance. Tha
 
 ## Install
 
+Not yet published to npm. Install from source:
+
 ```bash
-npm install -g setpoint
+git clone https://github.com/AmeerJ97/setpoint
+cd setpoint
+npm link              # exposes `setpoint` on PATH
 ```
 
 Add to `~/.claude/settings.json`:
@@ -34,12 +38,14 @@ Add to `~/.claude/settings.json`:
 
 Restart Claude Code. The HUD appears above the input area.
 
-Optional background services (systemd user units, from a source checkout):
+Optional background services (systemd user units):
 
 ```bash
 bash scripts/install-analytics.sh     # per-session cache + history
 bash scripts/install-health-timer.sh  # daily bloat / drift scan
 bash scripts/install-guard.sh         # inotify GrowthBook watcher
+                                      # (builds the Rust binary if cargo is present;
+                                      # falls back to the bash impl otherwise)
 systemctl --user start claude-quality-guard
 ```
 
@@ -63,8 +69,8 @@ setpoint advisor                 run the daily advisor once
 | quiet | `tengu_sotto_voce`, `quiet_fern`, `quiet_hollow` | `false` |
 | summarize | `tengu_summarize_tool_results` | `false` |
 | maxtokens | `tengu_amber_wren.maxTokens` | `128000` |
-| truncation | `tengu_pewter_kestrel.global` | `500000` |
-| refresh_ttl | `tengu_willow_refresh_ttl_hours` | `8760` |
+| truncation | `tengu_pewter_kestrel.*` (all per-tool subkeys) | `500000` |
+| refresh_ttl | `tengu_willow_refresh_ttl_hours` + `tengu_willow_census_ttl_hours` | `8760` |
 | mcp_connect | `tengu_claudeai_mcp_connectors` | `false` |
 | bridge | `bridge.enabled` | `false` |
 | grey_step | `tengu_grey_step` | `false` |
@@ -77,13 +83,16 @@ setpoint advisor                 run the daily advisor once
 | tool_persist | `tengu_tool_result_persistence` | `true` |
 | chomp | `tengu_chomp_inflection` | `true` |
 
-Categories can be individually skipped without disabling the whole guard:
+Categories can be individually skipped without disabling the whole guard.
+Once installed, the Rust binary lives at `src/guard/rust/target/release/setpoint-guard`
+(the bash fallback is `src/guard/claude-quality-guard.sh`):
 
 ```bash
-src/guard/claude-quality-guard.sh skip compact_max    # leave compaction alone
-src/guard/claude-quality-guard.sh unskip compact_max  # re-enable
-src/guard/claude-quality-guard.sh reset               # clear all skips
-src/guard/claude-quality-guard.sh status              # current state
+setpoint-guard skip compact_max    # leave compaction alone
+setpoint-guard unskip compact_max  # re-enable
+setpoint-guard reset               # clear all skips
+setpoint-guard status              # current state (same schema as `setpoint guard status`)
+setpoint-guard config              # list all categories with [ON]/[OFF]
 ```
 
 Background on why the guard exists:
@@ -133,7 +142,7 @@ Claude Code ──stdin JSON──→  setpoint (one-shot)  ──→  8 lines t
                                     ▼
                             ~/.claude/plugins/claude-hud/
                                     ▲
-  ~/.claude.json ──inotify──→ quality guard (bash+python, sub-500ms)
+  ~/.claude.json ──inotify──→ quality guard (Rust binary, <5ms; bash fallback)
                                     │ logs → /tmp/claude-quality-guard.log
                                     ▼
                             analytics daemon (60s poll) · health timer (daily)
@@ -168,12 +177,14 @@ The HUD renderer is a one-shot command. Background services run independently as
 
 - Node.js ≥ 18 (ESM, `Intl.Segmenter`)
 - Linux with systemd (for background services)
-- `inotifywait` (`inotify-tools` package) for the quality guard
+- `cargo` (Rust toolchain) for the fast guard binary — optional; falls back to
+  a bash + `inotifywait` impl when missing (`inotify-tools` package required
+  in that case)
 
 ## Testing
 
 ```bash
-npm test        # 249 tests, Node's built-in test runner, zero deps
+npm test        # 358 tests, Node's built-in test runner, zero deps
 npm run health  # run the health auditor once
 npm run advisor # run the daily advisor once
 ```

@@ -59,42 +59,86 @@ daily_rate = consumed_7d / (time_elapsed_7d / 86400)
 projected_at_reset = consumed_7d + (daily_rate * (seven_day.resets_at - now) / 86400)
 ```
 
-### Burn rate (session-level)
+### Burn rate (session-level, price-weighted + EWMA smoothed)
+
+Phase 1.2 replaced raw tokens-per-minute with a cost-relevance rate. Each
+component is weighted by its per-MTok price for the active model so that
+a turn which *reads* 100K cache tokens with a tiny output shows real
+quota pressure, not near-zero.
+
 ```
-session_tokens = output_tokens + cache_creation_input_tokens
-session_duration_min = (now - session_start) / 60
-burn_rate = session_tokens / session_duration_min
+// weights come from config/defaults.json pricing × cache TTL split
+w_in       = input_price
+w_out      = output_price
+w_cache_c  = cache_write_price   (5m vs 1h split when tier is known)
+w_cache_r  = cache_read_price
+
+cost_units = in * w_in + out * w_out + cache_create * w_cache_c + cache_read * w_cache_r
+raw_burn   = cost_units / max(session_duration_min, 1) * (1 / output_price)
+             // rescale to tokens/min units for display continuity
 ```
+
+Raw burn is smoothed with exponentially weighted moving average (α = 0.2)
+so a single bursty turn doesn't dominate. Both raw and smoothed values
+are exposed; the advisor consumes `smoothedBurn`, the Tokens line
+displays the smoothed value.
+
+Implementation: `src/analytics/cost.js::perTokenWeights()`,
+`src/analytics/cost.js::costWeightedBurnRate()`,
+`src/analytics/cost.js::ewmaBurnRate()`.
 
 ## Advisory Logic
 
-### Decision Matrix
+Phase 2 replaced the static 5-precedence decision matrix with an
+action-oriented engine at `src/advisor/engine.js`. The engine evaluates
+rungs in order and emits the first one that fires; each rung names a
+concrete remedy instead of an abstract effort/model pair.
 
-| 5hr Projected | 7day Projected | Session Burn | Recommendation |
-|---------------|----------------|--------------|----------------|
-| <70%          | <50%           | any          | ▲ INCREASE — safe for high effort + Opus |
-| <70%          | 50-80%         | <300t/m      | ▲ INCREASE — safe for high effort |
-| <70%          | 50-80%         | >300t/m      | ── NOMINAL — on track |
-| 70-90%        | <70%           | <200t/m      | ── NOMINAL — watch 5hr |
-| 70-90%        | <70%           | >200t/m      | ▼ REDUCE — 5hr getting tight |
-| >90%          | any            | any          | ⚠ THROTTLE — switch to Sonnet or low effort |
-| any           | >80%           | any          | ⚠ THROTTLE — weekly budget critical |
-| 100%          | any            | any          | ⛔ LIMIT HIT — wait for reset |
+### Action Ladder (first match wins)
+
+| Rung (`tier`) | Signal | Trigger | Action text |
+|---|---|---|---|
+| `hard_stop_5h` | `throttle` | 5h TTE > 0 and < 30 min | `stop now — 5h window exhausting in <30 min` |
+| `hard_stop_7d` | `throttle` | 7d TTE > 0 and < 12 h | `stop session — 7d budget exhausting in <12h` |
+| `model_swap`   | `reduce`   | Opus + peak active + `burnVelocity > 2.5× P50` | `swap Opus → Sonnet (peak burn high)` |
+| `clear_session`| `reduce`   | `edits ≥ 3` and R:E ratio < 3.0 | `/clear — model attention degraded (compact won't fix)` |
+| `compact_context`| `reduce` | Context % > 60 | `/compact — context > 60%` |
+| `ok`           | `increase` | None of the above | `on track — proceed` |
+| `limit_hit`    | `limit_hit`| 5h or 7d detail level == `hit` (overrides everything) | `wait for window reset` |
+
+Thresholds are anchored to the user's personal P50/P90 (rolling 30-day
+window over `usage-history.jsonl`), with defaults from
+`config/defaults.json` until ≥ 7 days of data and ≥ 50 samples exist.
+Peak-hour weighting (see `src/analytics/rates.js::projectWindow`) feeds
+TTE and burn-velocity inputs.
+
+### Confidence
+
+`confidence ∈ {low, medium, high}` dims the advisor badge when the
+session is young. Thresholds:
+
+- `low`:    durationMin < 15 **or** recent turns < 5
+- `medium`: durationMin < 60 **or** recent turns < 20
+- `high`:   otherwise
 
 ### Output Format
-```json
+```js
+// Recommendation (src/advisor/engine.js)
 {
-  "signal": "increase|nominal|reduce|throttle|limit_hit",
-  "reason": "38% weekly budget remaining, 62% 5hr used, resets in 2h15m",
-  "suggestion": {
-    "effort": "high",
-    "model": "opus",
-    "confidence": 0.85
+  signal:        'increase' | 'nominal' | 'reduce' | 'throttle' | 'limit_hit',
+  tier:          'ok' | 'compact_context' | 'clear_session' | 'model_swap'
+                 | 'hard_stop_5h' | 'hard_stop_7d' | 'limit_hit',
+  action:        '/compact — context > 60%',
+  causalReason:  'context 72% used',
+  confidence:    'low' | 'medium' | 'high',
+  confidenceWhy: '12min / 4 turns',
+  metrics: {
+    reads: 28, edits: 7, ratio: 4.0,
+    burnRate: 211, burnVelocity: 1.2,
+    fhTteSec: 9300, sdTteSec: 172000,
+    contextPercent: 72, peakActive: false,
   },
-  "projections": {
-    "five_hour_at_reset": 0.78,
-    "seven_day_at_reset": 0.52
-  }
+  baselines: { burnP50, burnP90, reP50, reP90, samples, daysCovered },
 }
 ```
 

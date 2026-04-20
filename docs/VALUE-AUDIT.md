@@ -81,7 +81,7 @@
 
 | Displayed | Source | Formula | Failure mode |
 |---|---|---|---|
-| `✓17/17 held` | `TOTAL_CATEGORIES = 17` (hardcoded) - `guard.skippedCount` | `src/display/lines/guard.js:19` | **MISLEADING — hardcoded count drifts from reality.** Guard categories list lives in `src/guard/claude-quality-guard.sh` and `config/defaults.json:52`; the display has its own `17` constant. Adding/removing a category breaks the display silently. **Fix:** read category count from `Object.keys(getDefaults().guard.categories).length` at render. |
+| `✓17/17 held` | `categoryOrder().length` from `loadDefaults().guard.categories` — `guard.skippedCount` | `src/display/lines/guard.js` (`categoryOrder()` helper) | **Phase 1.5 fix landed.** The count is read from `config/defaults.json` at render time; adding or removing a category updates the display without a code change. |
 | `last:brevity 2m` | `/tmp/claude-quality-guard.log` tail | `src/collectors/guard-reader.js` | OK. |
 | `↻4 today` | log scan | OK. |
 
