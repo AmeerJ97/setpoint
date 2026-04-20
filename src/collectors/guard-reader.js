@@ -20,6 +20,7 @@ const execFileAsync = promisify(execFile);
  * @property {Record<string, number>} flagCounts - per-flag activation counts today
  * @property {string|null} topFlag - most frequently reverted flag today
  * @property {number} skippedCount - number of skipped override categories
+ * @property {string[]} skippedCategories - names of skipped categories (subset of defaults.guard.categories)
  */
 
 /**
@@ -28,9 +29,13 @@ const execFileAsync = promisify(execFile);
 export async function readGuardStatus() {
   const running = await isGuardRunning();
   const { activationsToday, activationsLastHour, activationsPerHour, lastActivation, lastFlag, flagCounts, topFlag } = parseGuardLog();
-  const skippedCount = countSkippedCategories();
+  const skippedCategories = listSkippedCategories();
+  const skippedCount = skippedCategories.length;
 
-  return { running, activationsToday, activationsLastHour, activationsPerHour, lastActivation, lastFlag, flagCounts, topFlag, skippedCount };
+  return {
+    running, activationsToday, activationsLastHour, activationsPerHour,
+    lastActivation, lastFlag, flagCounts, topFlag, skippedCount, skippedCategories,
+  };
 }
 
 /**
@@ -58,16 +63,19 @@ async function isGuardRunning() {
 }
 
 /**
- * Count .skip files in the guard config directory.
- * @returns {number}
+ * Read the names of skipped categories from `<plugin>/guard-config/*.skip`.
+ * Returns the bare category name (e.g. `brevity`), not the .skip filename.
+ * @returns {string[]}
  */
-function countSkippedCategories() {
+function listSkippedCategories() {
   const configDir = `${PLUGIN_DIR}/guard-config`;
   try {
-    if (!existsSync(configDir)) return 0;
-    return readdirSync(configDir).filter(f => f.endsWith('.skip')).length;
+    if (!existsSync(configDir)) return [];
+    return readdirSync(configDir)
+      .filter(f => f.endsWith('.skip'))
+      .map(f => f.replace(/\.skip$/, ''));
   } catch {
-    return 0;
+    return [];
   }
 }
 

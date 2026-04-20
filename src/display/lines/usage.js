@@ -46,14 +46,14 @@ export function renderUsageLine(ctx) {
   const sdLevel = advisory?.sevenDay?.current != null ? advisory.sevenDay.level : undefined;
 
   const five = formatWindow('5h', usage.fiveHour, usage.fiveHourResetAt,
-    advisory?.fiveHour?.projected, fhLevel, railWidth);
+    advisory?.fiveHour?.projected, fhLevel, railWidth, advisory?.fiveHour);
   const seven = formatWindow('7d', usage.sevenDay, usage.sevenDayResetAt,
-    advisory?.sevenDay?.projected, sdLevel, railWidth);
+    advisory?.sevenDay?.projected, sdLevel, railWidth, advisory?.sevenDay);
 
   return `${dim(label)} ${five} ${dim('│')} ${seven}`;
 }
 
-function formatWindow(name, current, resetAt, projected, level, railWidth) {
+function formatWindow(name, current, resetAt, projected, level, railWidth, detail) {
   if (current === null || current === undefined) {
     return `${dim(`${name}:--%`)}`;
   }
@@ -66,5 +66,16 @@ function formatWindow(name, current, resetAt, projected, level, railWidth) {
   });
   const reset = formatResetTime(resetAt);
   const resetStr = reset ? ` ${dim(reset)}` : '';
-  return `${gauge}${resetStr}`;
+  // Peak-hour multiplier indicator (Phase 1.6). `⚡` lit when current
+  // local time is in the peak window; dimmed when peak hours are merely
+  // upcoming inside the remaining window (≥10% of remaining time). TTE
+  // lives on the Advisor line now — kept the peak glyph here because the
+  // Usage line is where the user already reads quota state.
+  let peakStr = '';
+  if (detail?.peakActive) {
+    peakStr = ` ${yellow('⚡')}`;
+  } else if (detail && detail.peakFraction >= 0.10 && detail.peakMultiplier > 1) {
+    peakStr = ` ${dim('⚡')}`;
+  }
+  return `${gauge}${resetStr}${peakStr}`;
 }

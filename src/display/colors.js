@@ -228,12 +228,18 @@ export function quotaBar(percent, width = 10) {
  * Gives 8× horizontal resolution: useful when the bar is narrow
  * (≤10 cells) but the caller wants smooth animation between values.
  *
+ * Optional `markerAt` overlays a dim `╎` character at that percentage
+ * position — used by the Context line to show where the autocompact
+ * buffer pushes effective % vs. the raw fill. Marker is suppressed if
+ * it would land inside the filled region.
+ *
  * @param {number} percent 0..100
  * @param {number} [width=10] width in cells
  * @param {function} [colorFn=getContextColor]
+ * @param {number} [markerAt] optional 0..100 marker position
  * @returns {string}
  */
-export function octantBar(percent, width = 10, colorFn = getContextColor) {
+export function octantBar(percent, width = 10, colorFn = getContextColor, markerAt) {
   const OCTANTS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
@@ -244,6 +250,23 @@ export function octantBar(percent, width = 10, colorFn = getContextColor) {
   const color = colorFn(safePercent);
   const dimEsc = mode() === 'none' ? '' : DIM;
   const reset = mode() === 'none' ? '' : RESET;
+
   const body = '█'.repeat(full) + (remainder > 0 ? OCTANTS[remainder] : '');
-  return `${color}${body}${dimEsc}${'░'.repeat(Math.max(0, empty))}${reset}`;
+  const tail = '░'.repeat(Math.max(0, empty));
+
+  // Marker overlay: only draws into the empty (dim) region so it doesn't
+  // visually contradict the filled portion.
+  const filledCells = full + (remainder > 0 ? 1 : 0);
+  if (Number.isFinite(markerAt) && markerAt > safePercent && safeWidth > 0) {
+    const m = Math.min(100, Math.max(0, markerAt));
+    const markerCell = Math.min(safeWidth - 1, Math.floor((m / 100) * safeWidth));
+    if (markerCell >= filledCells) {
+      const offset = markerCell - filledCells;
+      const before = tail.slice(0, offset);
+      const after  = tail.slice(offset + 1);
+      return `${color}${body}${dimEsc}${before}╎${after}${reset}`;
+    }
+  }
+
+  return `${color}${body}${dimEsc}${tail}${reset}`;
 }

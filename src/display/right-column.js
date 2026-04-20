@@ -2,19 +2,31 @@
  * Right column renderer — secondary metrics for each HUD line.
  * Displayed when terminal width >= 100 chars.
  * Uses sparklines and colored indicators for density.
+ *
+ * First 8 rows are per-line summaries (one per `LINE_RENDERERS`). Any
+ * additional rows are "extras" — content that doesn't correspond to a
+ * specific left line and pairs with blank left padding. The inline 2D
+ * context grid (Phase 6B) lives in the extras.
  */
 import { dim, cyan, green, yellow, red, RESET } from './colors.js';
 import { formatTokens } from './format.js';
 import { calculateCost, formatCost } from '../analytics/cost.js';
 import { miniBar } from './sparkline.js';
+import { buildBucketReport } from '../context/buckets.js';
+import { renderInlineGrid } from '../context/grid.js';
+import { loadDefaults } from '../data/defaults.js';
+import { getContextPercent } from '../data/stdin.js';
 
 /**
- * Generate right-column content for each of the 8 lines.
+ * Generate right-column content. Returns a flat array of physical rows
+ * where the first 8 are per-line summaries and any additional rows are
+ * extras (e.g., the 10-row inline context grid).
+ *
  * @param {import('./renderer.js').RenderContext} ctx
- * @returns {string[]} array of 8 right-column strings
+ * @returns {string[]}
  */
 export function renderRightColumns(ctx) {
-  return [
+  const summary = [
     rightModel(ctx),
     rightContext(ctx),
     rightUsage(ctx),
@@ -24,9 +36,44 @@ export function renderRightColumns(ctx) {
     rightGuard(ctx),
     rightAdvisor(ctx),
   ];
+  const extras = rightExtras(ctx);
+  return [...summary, ...extras];
 }
 
-// Note: 8 entries matching 8 LINE_RENDERERS (quality merged into guard)
+// Note: 8 summary entries matching 8 LINE_RENDERERS (quality merged into guard).
+
+/**
+ * Extras that appear below the 8 summary rows, paired with blank left
+ * padding. Phase 6B places the inline 10×10 bucket grid here so the
+ * user sees what's occupying their context window without leaving the HUD.
+ *
+ * Disabled via `hud.grid.enabled=false` in config/defaults.json. Silent
+ * fallback to empty extras on any error — the HUD must never fail.
+ */
+function rightExtras(ctx) {
+  const cfg = safeHudConfig();
+  if (cfg.grid?.enabled === false) return [];
+  if (ctx.narrow) return [];
+
+  const transcriptPath = ctx.stdin?.transcript_path;
+  const contextWindow = ctx.stdin?.context_window?.context_window_size ?? 200_000;
+  const cwd = ctx.stdin?.cwd ?? process.cwd();
+  const modelLabel = ctx.stdin?.model?.display_name ?? ctx.stdin?.model?.id ?? 'unknown';
+
+  try {
+    const report = buildBucketReport({ transcriptPath, contextWindow, cwd, modelLabel });
+    // Blank spacer row separates summary from grid so the right column
+    // reads as two distinct zones: metrics on top, visualization below.
+    return ['', ...renderInlineGrid(report, { cols: 10, rows: 10 })];
+  } catch {
+    return [];
+  }
+}
+
+function safeHudConfig() {
+  try { return loadDefaults()?.hud ?? {}; }
+  catch { return {}; }
+}
 
 function rightModel(ctx) {
   const parts = [];
@@ -139,12 +186,12 @@ function rightAdvisor(ctx) {
   const adv = ctx.advisory;
   if (!adv) return dim('--');
   const parts = [];
-  if (adv.fiveHour?.current !== null) {
+  if (adv.fiveHour && adv.fiveHour.current != null) {
     const lvl = adv.fiveHour.level;
     const color = lvl === 'ok' ? green : lvl === 'watch' ? cyan : lvl === 'tight' ? yellow : red;
     parts.push(color(`5h:${miniBar(adv.fiveHour.current)}${adv.fiveHour.current}%`));
   }
-  if (adv.sevenDay?.current !== null) {
+  if (adv.sevenDay && adv.sevenDay.current != null) {
     const lvl = adv.sevenDay.level;
     const color = lvl === 'ok' ? green : lvl === 'watch' ? cyan : lvl === 'tight' ? yellow : red;
     parts.push(color(`7d:${miniBar(adv.sevenDay.current)}${adv.sevenDay.current}%`));

@@ -56,7 +56,7 @@ export function resetDefaultsCache() {
 
 /**
  * Get the pricing table and default model ID.
- * @returns {{ defaultModel: string, models: Record<string, { input:number, output:number, cacheCreate:number, cacheRead:number }> }}
+ * @returns {{ defaultModel: string, dataResidencyMultiplier?: number, models: Record<string, { input:number, output:number, cacheCreate5m:number, cacheCreate1h:number, cacheRead:number }> }}
  */
 export function getPricing() {
   const d = loadDefaults();
@@ -65,7 +65,7 @@ export function getPricing() {
 
 /**
  * Get rates tuning block.
- * @returns {{ activeHoursPerDay: number, classifyLevel: { critical: number, tight: number, watch: number } }}
+ * @returns {{ activeHoursPerDay: number, classifyLevel: { critical: number, tight: number, watch: number }, peakHours: { enabled: boolean, timezone: string, startHour: number, endHour: number, multiplier: number } }}
  */
 export function getRatesTuning() {
   const d = loadDefaults();
@@ -75,6 +75,13 @@ export function getRatesTuning() {
       critical: d.rates?.classifyLevel?.critical ?? 90,
       tight:    d.rates?.classifyLevel?.tight    ?? 70,
       watch:    d.rates?.classifyLevel?.watch    ?? 50,
+    },
+    peakHours: {
+      enabled:    d.rates?.peakHours?.enabled    ?? false,
+      timezone:   d.rates?.peakHours?.timezone   ?? 'America/Los_Angeles',
+      startHour:  d.rates?.peakHours?.startHour  ?? 5,
+      endHour:    d.rates?.peakHours?.endHour    ?? 11,
+      multiplier: d.rates?.peakHours?.multiplier ?? 1.5,
     },
   };
 }

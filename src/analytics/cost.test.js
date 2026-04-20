@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { calculateCost, resolvePricing } from './cost.js';
+import { calculateCost, resolvePricing, costWeightedBurnRate, ewmaBurnRate, perTokenWeights } from './cost.js';
 import { resetDefaultsCache } from '../data/defaults.js';
 
 beforeEach(() => {
@@ -53,6 +53,54 @@ test('calculateCost with no model uses defaultModel', () => {
 test('calculateCost returns 0 for null stats', () => {
   assert.equal(calculateCost(null), 0);
   assert.equal(calculateCost(undefined), 0);
+});
+
+test('perTokenWeights returns USD-per-token weights for the named model', () => {
+  const w = perTokenWeights('claude-opus-4-7');
+  // Opus 4.7: $5/MTok input, $25/MTok output, $0.50/MTok read, $6.25/MTok 5m write
+  assert.equal(w.input,       5    / 1_000_000);
+  assert.equal(w.output,      25   / 1_000_000);
+  assert.equal(w.cacheRead,   0.50 / 1_000_000);
+  assert.equal(w.cacheCreate, 6.25 / 1_000_000);
+});
+
+test('costWeightedBurnRate equals output/duration when only output tokens present', () => {
+  const burn = costWeightedBurnRate({
+    totalInput: 0, totalOutput: 1000, totalCacheCreate: 0, totalCacheRead: 0,
+    durationMin: 10,
+  }, 'claude-opus-4-7');
+  // 1000 output tokens / 10 min = 100 t/m exactly
+  assert.equal(burn, 100);
+});
+
+test('costWeightedBurnRate inflates a cache-heavy turn (Phase 1.2 fix)', () => {
+  // Old formula would say 5 t/m (50/10). New formula counts the 100K cache_read.
+  // 100K reads * $0.50/MTok = $0.05; expressed as output-equiv at $25/MTok
+  // = 0.05 / 25 * 1M = 2000 tokens equivalent. Plus 50 raw output → 2050 total.
+  // Over 10 min → 205 t/m. Old formula would have shown 5.
+  const burn = costWeightedBurnRate({
+    totalInput: 0, totalOutput: 50, totalCacheCreate: 0, totalCacheRead: 100_000,
+    durationMin: 10,
+  }, 'claude-opus-4-7');
+  assert.ok(burn > 100, `expected cache-heavy burn > 100 t/m, got ${burn}`);
+});
+
+test('costWeightedBurnRate returns 0 when durationMin is 0', () => {
+  const burn = costWeightedBurnRate({ totalOutput: 5000, durationMin: 0 }, 'claude-opus-4-7');
+  assert.equal(burn, 0);
+});
+
+test('ewmaBurnRate returns 0 for empty series', () => {
+  assert.equal(ewmaBurnRate([], 10), 0);
+  assert.equal(ewmaBurnRate(null, 10), 0);
+});
+
+test('ewmaBurnRate biases toward recent values with α=0.2', () => {
+  // [100, 100, 100, 100, 1000] over 5 turns / 10 min.
+  // EWMA progression: 100 → 100 → 100 → 100 → 100 + 0.2*(1000-100)=280
+  // turnsPerMin = 5/10 = 0.5; smoothed = 280 * 0.5 = 140
+  const smoothed = ewmaBurnRate([100, 100, 100, 100, 1000], 10);
+  assert.equal(smoothed, 140);
 });
 
 test('CLAUDE_HUD_PRICING_FILE overrides pricing', () => {

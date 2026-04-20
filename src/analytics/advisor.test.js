@@ -2,29 +2,42 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeAdvisory } from './advisor.js';
 
-// Helper: create rates with detail objects matching the new engine output
-function makeRates(fiveHourPct, sevenDayPct, fiveHourProj, sevenDayProj, burn = 100) {
+/**
+ * The advisor adapter is now a thin wrapper over `src/advisor/engine.js`.
+ * These tests validate (1) the legacy fields the HUD renderer still reads
+ * (signal, fiveHour/sevenDay passthrough, burnLevel, estimatedSessions)
+ * and (2) the new fields the engine surfaces (action, confidence, tier,
+ * causalReason, baselines, metrics).
+ *
+ * The full ladder behavior is exercised in src/advisor/engine.test.js.
+ */
+
+function makeRates({ fiveHourPct = 40, sevenDayPct = 20, fhProj = 0.5, sdProj = 0.3,
+                     burn = 100, fhTte = null, sdTte = null, fhLevel = null, sdLevel = null,
+                     peakActive = false } = {}) {
   return {
-    fiveHourProjected: fiveHourProj,
-    sevenDayProjected: sevenDayProj,
+    fiveHourProjected: fhProj,
+    sevenDayProjected: sdProj,
     burnRate: burn,
-    fiveHourDetail: fiveHourPct !== null ? {
+    estimatedSessions: 1,
+    fiveHourDetail: fiveHourPct === null ? null : {
       current: fiveHourPct,
-      projected: fiveHourProj,
-      tte: null,
+      projected: fhProj,
+      tte: fhTte,
       burnFracPerMin: 0,
       resetIn: '2h',
-      level: classifyLevel(fiveHourPct, fiveHourProj),
-    } : null,
-    sevenDayDetail: sevenDayPct !== null ? {
+      level: fhLevel ?? classifyLevel(fiveHourPct, fhProj),
+      peakActive, peakFraction: peakActive ? 0.5 : 0, peakMultiplier: 1.5,
+    },
+    sevenDayDetail: sevenDayPct === null ? null : {
       current: sevenDayPct,
-      projected: sevenDayProj,
-      tte: null,
+      projected: sdProj,
+      tte: sdTte,
       burnFracPerMin: 0,
       resetIn: '5d',
-      level: classifyLevel(sevenDayPct, sevenDayProj),
-    } : null,
-    estimatedSessions: 1,
+      level: sdLevel ?? classifyLevel(sevenDayPct, sdProj),
+      peakActive: false, peakFraction: 0, peakMultiplier: 1.5,
+    },
   };
 }
 
@@ -36,69 +49,109 @@ function classifyLevel(current, projected) {
   return 'ok';
 }
 
-describe('computeAdvisory', () => {
-  it('returns increase when plenty of headroom', () => {
-    const rates = makeRates(40, 20, 0.50, 0.30, 100);
-    const usage = { fiveHour: 40, sevenDay: 20, fiveHourResetAt: new Date(Date.now() + 7200000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
-    assert.equal(result.signal, 'increase');
-    assert.equal(result.burnLevel, 'low');
-  });
-
-  it('returns throttle when 5hr critical', () => {
-    const rates = makeRates(90, 30, 0.95, 0.40, 300);
-    const usage = { fiveHour: 90, sevenDay: 30, fiveHourResetAt: new Date(Date.now() + 3600000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
-    assert.equal(result.signal, 'throttle');
+describe('computeAdvisory (engine adapter)', () => {
+  it('passes window levels through to the display layer', () => {
+    const rates = makeRates({ fiveHourPct: 90, fhProj: 0.95, fhLevel: 'critical' });
+    const usage = { fiveHour: 90, sevenDay: 30,
+      fiveHourResetAt: new Date(Date.now() + 3600000),
+      sevenDayResetAt: new Date(Date.now() + 5e8) };
+    const result = computeAdvisory(rates, usage, { history: [] });
     assert.equal(result.fiveHour.level, 'critical');
   });
 
-  it('returns reduce when weekly tight', () => {
-    const rates = makeRates(40, 75, 0.50, 0.85, 100);
-    const usage = { fiveHour: 40, sevenDay: 75, fiveHourResetAt: new Date(Date.now() + 7200000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
-    assert.equal(result.signal, 'reduce');
-    assert.equal(result.sevenDay.level, 'tight');
-  });
-
-  it('returns throttle when weekly critical (>90% projected)', () => {
-    const rates = makeRates(40, 85, 0.50, 0.95, 100);
-    const usage = { fiveHour: 40, sevenDay: 85, fiveHourResetAt: new Date(Date.now() + 7200000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
+  it('hard-stops when 5h TTE drops under 30 min', () => {
+    const rates = makeRates({ fhTte: 20 * 60 });
+    const result = computeAdvisory(rates, null, { history: [] });
     assert.equal(result.signal, 'throttle');
-    assert.equal(result.sevenDay.level, 'critical');
+    assert.equal(result.tier, 'hard_stop_5h');
+    assert.match(result.action, /stop now/i);
+    assert.match(result.causalReason, /5h TTE/);
   });
 
-  it('returns limit_hit when at 100%', () => {
-    const rates = makeRates(100, 40, 1, 0.50, 0);
-    const usage = { fiveHour: 100, sevenDay: 40, fiveHourResetAt: new Date(Date.now() + 3600000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
+  it('hard-stops when 7d TTE drops under 12 h', () => {
+    const rates = makeRates({ sdTte: 6 * 3600 });
+    const result = computeAdvisory(rates, null, { history: [] });
+    assert.equal(result.signal, 'throttle');
+    assert.equal(result.tier, 'hard_stop_7d');
+  });
+
+  it('returns limit_hit signal when 5h window is at 100%', () => {
+    const rates = makeRates({ fiveHourPct: 100, fhProj: 1, fhLevel: 'hit' });
+    const usage = { fiveHour: 100, sevenDay: 40,
+      fiveHourResetAt: new Date(Date.now() + 3600000),
+      sevenDayResetAt: new Date(Date.now() + 5e8) };
+    const result = computeAdvisory(rates, usage, { history: [] });
     assert.equal(result.signal, 'limit_hit');
     assert.equal(result.fiveHour.level, 'hit');
   });
 
-  it('returns reduce when 5hr tight and high burn', () => {
-    const rates = makeRates(70, 30, 0.75, 0.40, 1200);
-    const usage = { fiveHour: 70, sevenDay: 30, fiveHourResetAt: new Date(Date.now() + 3600000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
+  it('recommends /clear when R:E ratio is below 3.0', () => {
+    const rates = makeRates();
+    const result = computeAdvisory(rates, null, {
+      history: [],
+      toolCounts: { Read: 4, Edit: 4 }, // ratio 1.0
+    });
+    assert.equal(result.tier, 'clear_session');
     assert.equal(result.signal, 'reduce');
-    assert.equal(result.burnLevel, 'high');
+    assert.match(result.action, /\/clear/);
   });
 
-  it('returns nominal for no usage data', () => {
-    const rates = makeRates(null, null, 0, 0, 0);
-    const result = computeAdvisory(rates, null);
-    assert.equal(result.signal, 'nominal');
+  it('recommends /compact when context exceeds 60%', () => {
+    const rates = makeRates();
+    const result = computeAdvisory(rates, null, {
+      history: [],
+      contextPercent: 72,
+      toolCounts: { Read: 30, Edit: 5 }, // ratio 6, R:E ladder skipped
+    });
+    assert.equal(result.tier, 'compact_context');
+    assert.equal(result.signal, 'reduce');
+    assert.match(result.action, /\/compact/);
   });
 
-  it('includes detail and session count', () => {
-    const rates = makeRates(50, 35, 0.60, 0.45, 500);
-    rates.estimatedSessions = 2;
-    const usage = { fiveHour: 50, sevenDay: 35, fiveHourResetAt: new Date(Date.now() + 7200000), sevenDayResetAt: new Date(Date.now() + 500000000) };
-    const result = computeAdvisory(rates, usage);
-    assert.equal(typeof result.fiveHour.current, 'number');
-    assert.equal(typeof result.fiveHour.projected, 'number');
+  it('returns "on track" when no ladder rung fires', () => {
+    const rates = makeRates({ burn: 100 });
+    const result = computeAdvisory(rates, null, {
+      history: [],
+      toolCounts: { Read: 30, Edit: 5 },
+      contextPercent: 30,
+    });
+    assert.equal(result.tier, 'ok');
+    assert.equal(result.signal, 'increase');
+  });
+
+  it('exposes confidence based on session duration + turn count', () => {
+    const rates = makeRates();
+    const young = computeAdvisory(rates, null, {
+      history: [],
+      tokenStats: { burnRate: 100, durationMin: 5, recentTurnsOutput: [100, 200] },
+    });
+    assert.equal(young.confidence, 'low');
+
+    const mature = computeAdvisory(rates, null, {
+      history: [],
+      tokenStats: { burnRate: 100, durationMin: 90,
+        recentTurnsOutput: Array(30).fill(100) },
+    });
+    assert.equal(mature.confidence, 'high');
+  });
+
+  it('preserves burnLevel + estimatedSessions for backward compat', () => {
+    const rates = makeRates({ burn: 600 });
+    rates.estimatedSessions = 3;
+    const result = computeAdvisory(rates, null, { history: [] });
     assert.equal(result.burnLevel, 'medium');
-    assert.equal(result.estimatedSessions, 2);
+    assert.equal(result.estimatedSessions, 3);
+  });
+
+  it('exposes engine metrics + baselines on the advisory', () => {
+    const result = computeAdvisory(makeRates(), null, {
+      history: [],
+      toolCounts: { Read: 10, Edit: 2 },
+    });
+    assert.ok(typeof result.metrics === 'object');
+    assert.equal(result.metrics.reads, 10);
+    assert.equal(result.metrics.edits, 2);
+    assert.ok(typeof result.baselines === 'object');
+    assert.equal(result.baselines.sufficient, false);
   });
 });

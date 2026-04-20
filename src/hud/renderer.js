@@ -19,6 +19,7 @@ import { findActiveSessions } from '../data/session.js';
 import { readJson } from '../data/jsonl.js';
 import { HEALTH_REPORT_FILE } from '../data/paths.js';
 import { calculateRates } from '../analytics/rates.js';
+import { costWeightedBurnRate, ewmaBurnRate } from '../analytics/cost.js';
 import { computeAdvisory } from '../analytics/advisor.js';
 import { runAnomalyChecks } from '../anomaly/detector.js';
 import { notifyCriticalAnomalies } from '../anomaly/notify.js';
@@ -54,7 +55,7 @@ async function main() {
 
     // Sync reads (fast, from cache files) — scoped to THIS session.
     const usageData = getUsageFromStdin(stdin);
-    const tokenStats = augmentTokenStats(readCachedTokenStats(sessionId), stdin, transcript.sessionStart);
+    const tokenStats = augmentTokenStats(readCachedTokenStats(sessionId), stdin, transcript.sessionStart, getModelName(stdin));
     const activeMcps = getActiveMcpNames(sessionId);
     const isCompressed = isCompressionEnabled();
     const rtkStats = readRtkStats(sessionId);
@@ -65,21 +66,29 @@ async function main() {
     try { activeSessionCount = Math.max(1, findActiveSessions().length); }
     catch { /* readdir failed, default to 1 */ }
 
-    // Analytics
-    const rates = calculateRates(usageData, tokenStats?.burnRate ?? 0);
-    const advisory = computeAdvisory(rates, usageData);
-
-    // Aggregate tool counts from transcript (used by anomaly detector + quality line)
+    // Aggregate tool counts from transcript first — the advisor engine
+    // needs them for the R:E ladder rung, anomaly detector uses them too.
     const toolCounts = {};
     for (const t of transcript.tools) {
       toolCounts[t.name] = (toolCounts[t.name] ?? 0) + 1;
     }
 
+    const contextPercentForAdvisor = getContextPercent(stdin);
+    const modelNameForAdvisor = getModelName(stdin);
+
+    // Analytics
+    const rates = calculateRates(usageData, tokenStats?.burnRate ?? 0);
+    const advisory = computeAdvisory(rates, usageData, {
+      toolCounts,
+      tokenStats,
+      contextPercent: contextPercentForAdvisor,
+      modelName: modelNameForAdvisor,
+    });
+
     // Anomaly detection (background drain, token spikes, read:edit ratio, etc.)
     let anomalies = [];
     try {
       const currentUsage = stdin?.context_window?.current_usage ?? {};
-      const contextPercent = getContextPercent(stdin);
 
       anomalies = runAnomalyChecks({
         // Token data
@@ -92,13 +101,13 @@ async function main() {
         durationMin: tokenStats?.durationMin ?? 0,
         compactionCount: 0,
         // Context pressure
-        contextPercent,
+        contextPercent: contextPercentForAdvisor,
         // Guard data
         guardActivationsPerHour: guardStatus?.activationsPerHour ?? 0,
         // Tool data
         toolCounts,
         // Model
-        modelName: getModelName(stdin),
+        modelName: modelNameForAdvisor,
       });
 
       // Send desktop notification for critical anomalies
@@ -145,6 +154,9 @@ async function main() {
     maybeWriteHistory(sessionId, usageData, tokenStats, advisory, effort, stdin, rtkStats);
   } catch (error) {
     console.log(`[claude-hud] Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    if (process.env.CLAUDE_HUD_DEBUG && error instanceof Error) {
+      console.error(error.stack);
+    }
   }
 }
 
@@ -186,14 +198,20 @@ function maybeWriteHistory(sessionId, usageData, tokenStats, advisory, effort, s
  * Augment cached token stats with fresh stdin data.
  * stdin has current_usage from this render cycle — always fresher than daemon cache.
  * sessionStart (from transcript) is used to compute duration when daemon cache has dur=0.
+ *
+ * Burn rate (Phase 1.2): cost-weighted across input + output + cache_create
+ * + cache_read, then expressed as output-token-equivalent tokens/min so
+ * the existing `t/m` display unit still applies. EWMA-smoothed value
+ * also exposed for advisor consumption.
  */
-function augmentTokenStats(cached, stdin, sessionStart) {
+function augmentTokenStats(cached, stdin, sessionStart, modelName) {
   const usage = stdin?.context_window?.current_usage;
   if (!usage) return cached;
 
   const base = cached ?? {
     totalInput: 0, totalOutput: 0, totalCacheCreate: 0, totalCacheRead: 0,
     apiCalls: 0, burnRate: 0, tools: {}, mcps: {}, agentSpawns: 0, durationMin: 0,
+    recentTurnsOutput: [],
   };
 
   // Use stdin token counts if they're larger (fresher) than cached
@@ -213,10 +231,15 @@ function augmentTokenStats(cached, stdin, sessionStart) {
     : 0;
   const durationMin = base.durationMin > 0 ? base.durationMin : transcriptDurMin;
 
-  // Burn rate: output tokens per minute from freshest available duration
-  const burnRate = durationMin > 0
-    ? Math.round(freshOutput / durationMin)
-    : base.burnRate;
+  const burnRate = costWeightedBurnRate({
+    totalInput: freshInput,
+    totalOutput: freshOutput,
+    totalCacheCreate: freshCacheCreate,
+    totalCacheRead: freshCacheRead,
+    durationMin,
+  }, modelName) || base.burnRate;
+
+  const burnRateSmoothed = ewmaBurnRate(base.recentTurnsOutput, durationMin);
 
   return {
     ...base,
@@ -226,6 +249,8 @@ function augmentTokenStats(cached, stdin, sessionStart) {
     totalCacheRead: freshCacheRead,
     durationMin,
     burnRate,
+    burnRateSmoothed,
+    burnRateModel: modelName ?? null,
   };
 }
 

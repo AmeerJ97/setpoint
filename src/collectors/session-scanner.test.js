@@ -50,7 +50,13 @@ test('per-session cache returns only that session\'s stats', () => {
   assert.notEqual(statsA.totalInput, statsB.totalInput);
 });
 
-test('legacy aggregate fallback when per-session file absent', () => {
+test('fresh session returns null — no cross-session aggregation', () => {
+  // Fix (2026-04-20): when no per-session file exists and sid doesn't
+  // match the legacy blob, the old behaviour summed all sessions and
+  // displayed them as if they belonged to the fresh session (reported
+  // 243m / $21 / 833K tokens on turn 1). The correct answer is null —
+  // the HUD renders `--` until the daemon writes a real per-session
+  // record.
   writeFileSync(paths.TOKEN_STATS_LATEST, JSON.stringify({
     scannedAt: new Date().toISOString(),
     sessions: [
@@ -60,8 +66,7 @@ test('legacy aggregate fallback when per-session file absent', () => {
   }));
 
   const stats = scanner.readCachedTokenStats('case2-new-session-no-file');
-  assert.equal(stats.totalInput, 300);
-  assert.equal(stats.totalOutput, 120);
+  assert.equal(stats, null, 'fresh session must not inherit cumulative stats');
 });
 
 test('legacy fallback matches by sid when possible', () => {

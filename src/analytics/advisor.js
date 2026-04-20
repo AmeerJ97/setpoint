@@ -1,20 +1,104 @@
 /**
- * Advisory engine — dual-window analysis using rate engine projections.
- * Uses WindowProjection from rates.js which includes sigmoid-blended
- * projections, TTE, and per-window health levels.
+ * Advisor adapter — thin wrapper over `src/advisor/engine.js` that
+ * preserves the existing `Advisory` shape the HUD renderer consumes
+ * while threading the engine's new Recommendation fields through.
+ *
+ * The engine is the source of truth for `signal`, `action`, `confidence`,
+ * `causalReason`, `metrics`, and `baselines`. Window-level fields
+ * (`fiveHour`, `sevenDay`) come straight from the rate engine — the
+ * advisor doesn't add anything to them, just hands them to the display.
  */
+
+import { buildRecommendation } from '../advisor/engine.js';
+import { readJsonlWindow } from '../data/jsonl.js';
+import { HISTORY_FILE } from '../data/paths.js';
 
 /**
  * @typedef {object} Advisory
  * @property {'increase'|'nominal'|'reduce'|'throttle'|'limit_hit'} signal
- * @property {string} reason
+ * @property {string} reason            - kept for backward compat (= causalReason)
+ * @property {string} action
+ * @property {string} causalReason
+ * @property {'low'|'medium'|'high'} confidence
+ * @property {string} confidenceWhy
+ * @property {string} tier
  * @property {{ effort: string, model: string }} suggestion
  * @property {import('./rates.js').WindowProjection|null} fiveHour
  * @property {import('./rates.js').WindowProjection|null} sevenDay
  * @property {number} burnRate
  * @property {'low'|'medium'|'high'} burnLevel
  * @property {number} estimatedSessions
+ * @property {object} metrics
+ * @property {object} baselines
  */
+
+const HISTORY_WINDOW_MS = 30 * 86_400_000; // 30 days for baselining
+
+/**
+ * @param {import('./rates.js').RateData} rates
+ * @param {import('../data/stdin.js').UsageData|null} usageData
+ * @param {object} [options]
+ * @param {Record<string, number>} [options.toolCounts]
+ * @param {{ burnRate?: number, durationMin?: number, recentTurnsOutput?: number[] }} [options.tokenStats]
+ * @param {number|null} [options.contextPercent]
+ * @param {string|null} [options.modelName]
+ * @param {Array<object>} [options.history]    - inject history (tests); else read from disk
+ * @returns {Advisory}
+ */
+export function computeAdvisory(rates, usageData, options = {}) {
+  const fiveHour = rates?.fiveHourDetail ?? null;
+  const sevenDay = rates?.sevenDayDetail ?? null;
+  const burn = Number(rates?.burnRate ?? 0);
+  const sessions = rates?.estimatedSessions ?? 1;
+
+  const history = options.history ?? safeReadHistory();
+
+  const rec = buildRecommendation({
+    rates,
+    usage: usageData,
+    tokenStats: options.tokenStats ?? { burnRate: burn },
+    toolCounts: options.toolCounts ?? {},
+    contextPercent: options.contextPercent ?? null,
+    modelName: options.modelName ?? null,
+    history,
+  });
+
+  return {
+    signal: rec.signal,
+    reason: rec.causalReason,
+    action: rec.action,
+    causalReason: rec.causalReason,
+    confidence: rec.confidence,
+    confidenceWhy: rec.confidenceWhy,
+    tier: rec.tier,
+    suggestion: deriveSuggestion(rec),
+    fiveHour, sevenDay,
+    burnRate: burn,
+    burnLevel: classifyBurn(burn),
+    estimatedSessions: sessions,
+    metrics: rec.metrics,
+    baselines: rec.baselines,
+  };
+}
+
+function deriveSuggestion(rec) {
+  // Map the engine's tier into the legacy {effort, model} hint that the
+  // daily report and one or two display callers still read. Conservative
+  // defaults — when the engine says "throttle" we always step down.
+  switch (rec.tier) {
+    case 'hard_stop_5h':
+    case 'hard_stop_7d':
+    case 'limit_hit':
+      return { effort: 'low', model: 'sonnet' };
+    case 'model_swap':
+      return { effort: 'high', model: 'sonnet' };
+    case 'clear_session':
+    case 'compact_context':
+      return { effort: 'medium', model: 'opus' };
+    default:
+      return { effort: 'high', model: 'opus' };
+  }
+}
 
 function classifyBurn(rate) {
   if (rate > 1000) return 'high';
@@ -22,84 +106,7 @@ function classifyBurn(rate) {
   return 'low';
 }
 
-function formatTte(tteSec) {
-  if (!tteSec || tteSec <= 0) return null;
-  const mins = Math.floor(tteSec / 60);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  return hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
+function safeReadHistory() {
+  try { return readJsonlWindow(HISTORY_FILE, HISTORY_WINDOW_MS); }
+  catch { return []; }
 }
-
-/**
- * @param {import('./rates.js').RateData} rates
- * @param {import('../data/stdin.js').UsageData|null} usageData
- * @returns {Advisory}
- */
-export function computeAdvisory(rates, usageData) {
-  const burn = rates.burnRate;
-  const burnLevel = classifyBurn(burn);
-  const fiveHour = rates.fiveHourDetail ?? { current: null, projected: 0, level: 'ok', resetIn: null, tte: null, burnFracPerMin: 0 };
-  const sevenDay = rates.sevenDayDetail ?? { current: null, projected: 0, level: 'ok', resetIn: null, tte: null, burnFracPerMin: 0 };
-  const sessions = rates.estimatedSessions ?? 1;
-
-  const base = { fiveHour, sevenDay, burnRate: burn, burnLevel, estimatedSessions: sessions };
-
-  // No usage data
-  if (!usageData) {
-    return { signal: 'nominal', reason: 'no rate data', suggestion: { effort: 'high', model: 'opus' }, ...base };
-  }
-
-  // Limit hit
-  if (fiveHour.level === 'hit' || sevenDay.level === 'hit') {
-    const which = fiveHour.level === 'hit' ? '5h' : '7d';
-    const resetIn = fiveHour.level === 'hit' ? fiveHour.resetIn : sevenDay.resetIn;
-    return { signal: 'limit_hit', reason: `${which} limit reached${resetIn ? ` — resets ${resetIn}` : ''}`, suggestion: { effort: 'low', model: 'sonnet' }, ...base };
-  }
-
-  // Both critical
-  if (fiveHour.level === 'critical' && sevenDay.level === 'critical') {
-    return { signal: 'throttle', reason: `both windows critical — 5h→${pct(fiveHour.projected)} 7d→${pct(sevenDay.projected)}`, suggestion: { effort: 'low', model: 'sonnet' }, ...base };
-  }
-
-  // 5hr critical
-  if (fiveHour.level === 'critical') {
-    const tte = formatTte(fiveHour.tte);
-    const tteStr = tte ? ` exhaust ~${tte}` : '';
-    return { signal: 'throttle', reason: `5h→${pct(fiveHour.projected)}${tteStr}${fiveHour.resetIn ? ` resets ${fiveHour.resetIn}` : ''}`, suggestion: { effort: 'low', model: 'sonnet' }, ...base };
-  }
-
-  // 7d critical
-  if (sevenDay.level === 'critical') {
-    return { signal: 'throttle', reason: `7d→${pct(sevenDay.projected)} weekly budget critical`, suggestion: { effort: 'low', model: 'sonnet' }, ...base };
-  }
-
-  // Tight + high burn
-  if (fiveHour.level === 'tight' && burnLevel === 'high') {
-    const rem = fiveHour.current !== null ? 100 - fiveHour.current : 0;
-    return { signal: 'reduce', reason: `5h tight ${rem}% left, burn ${Math.round(burn)}t/m`, suggestion: { effort: 'medium', model: 'opus' }, ...base };
-  }
-
-  // 7d tight
-  if (sevenDay.level === 'tight') {
-    const rem = sevenDay.current !== null ? 100 - sevenDay.current : 0;
-    return { signal: 'reduce', reason: `7d budget ${rem}% remaining — pace yourself`, suggestion: { effort: 'medium', model: 'opus' }, ...base };
-  }
-
-  // Multi-session warning
-  const sessionNote = sessions > 1 ? ` (${sessions} sessions)` : '';
-
-  // Both ok
-  if (fiveHour.level === 'ok' && sevenDay.level === 'ok') {
-    const weekRem = sevenDay.current !== null ? 100 - sevenDay.current : 100;
-    return { signal: 'increase', reason: `${weekRem}% weekly left — go hard${sessionNote}`, suggestion: { effort: 'high', model: 'opus' }, ...base };
-  }
-
-  // Ok + watch
-  if (fiveHour.level === 'ok' && sevenDay.level === 'watch') {
-    return { signal: 'increase', reason: `safe for high effort${sessionNote}`, suggestion: { effort: 'high', model: 'opus' }, ...base };
-  }
-
-  return { signal: 'nominal', reason: `on track${sessionNote}`, suggestion: { effort: 'high', model: 'opus' }, ...base };
-}
-
-function pct(v) { return `${Math.round(v * 100)}%`; }

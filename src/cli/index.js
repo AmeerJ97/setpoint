@@ -48,6 +48,10 @@ async function run() {
       await import('../advisor/index.js');
       return 0;
     }
+    case 'context': {
+      const mod = await import('./context.js');
+      return mod.main([sub, ...rest].filter(Boolean));
+    }
     case 'demo': {
       const mod = await import('./demo.js');
       return mod.main();
@@ -75,6 +79,7 @@ Usage:
   setpoint guard status [--json]        drilldown of the 17-category enforcement surface
   setpoint health                       run the health auditor
   setpoint advisor                      run the daily advisor
+  setpoint context [--json] [--session] approximate the native /context bucket grid
   setpoint demo                         render the HUD in every color/glyph mode
   setpoint help                         show this message
 

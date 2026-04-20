@@ -2,3 +2,6 @@ node_modules/
 *.log
 .claude/
 .claude.json
+
+# Rust guard build artifacts — binary is built locally via scripts/build-guard.sh
+src/guard/rust/target/

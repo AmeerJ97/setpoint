@@ -1,0 +1,27 @@
+[package]
+name = "setpoint-guard"
+version = "2.0.0"
+edition = "2021"
+description = "Quality guard for Claude Code — holds tengu_* GrowthBook flags at configured setpoints"
+authors = ["setpoint contributors"]
+license = "MIT"
+
+[[bin]]
+name = "setpoint-guard"
+path = "src/main.rs"
+
+[dependencies]
+# File-system watcher (cross-platform but Linux-tested only here).
+notify = "6"
+# JSON read/modify/write. We use Value (DOM) intentionally — partial-parse
+# would need a typed schema and the tengu_* shape changes underneath us.
+serde_json = "1"
+
+[profile.release]
+# Tiny binary, fast inotify path. Strip and LTO so the single-file output
+# stays under ~2 MB; install scripts copy it to ~/.local/bin.
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

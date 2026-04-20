@@ -28,18 +28,22 @@ export function checkBackgroundDrain() {
     const prefs = desktopConfig.preferences || {};
     const desktopRunning = isClaudeDesktopRunning();
 
+    // Downgraded from 'critical' to 'warn' on 2026-04-20: it was firing
+    // on every render for users who always run Desktop, and monopolizing
+    // the Advisor line. The info still matters, but the signal isn't
+    // urgent enough to override a quota/projection recommendation.
     if (desktopRunning && prefs.coworkScheduledTasksEnabled === true) {
       alerts.push({
         triggered: true,
-        message: 'Cowork scheduled tasks ENABLED (Desktop running) — consuming quota in background',
-        severity: 'critical',
+        message: 'Cowork scheduled tasks on — Desktop burns quota in background',
+        severity: 'warn',
       });
     }
     if (desktopRunning && prefs.ccdScheduledTasksEnabled === true) {
       alerts.push({
         triggered: true,
-        message: 'CCD scheduled tasks ENABLED (Desktop running) — consuming quota in background',
-        severity: 'critical',
+        message: 'CCD scheduled tasks on — Desktop burns quota in background',
+        severity: 'warn',
       });
     }
   } catch { /* no desktop config — fine */ }

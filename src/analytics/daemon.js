@@ -13,6 +13,7 @@ import { promisify } from 'node:util';
 import { PLUGIN_DIR, TOKEN_STATS_LATEST, TOKEN_STATS_FILE, TOKEN_STATS_DIR, tokenStatsFileFor, HISTORY_FILE, RTK_STATS_FILE, RTK_STATS_DIR, rtkStatsFileFor, ROTATION } from '../data/paths.js';
 import { writeHistoryEntry } from './history.js';
 import { rotateJsonl, writeJsonAtomic } from '../data/jsonl.js';
+import { costWeightedBurnRate } from './cost.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,11 +28,19 @@ export function analyzeSession(jsonlPath) {
   const s = {
     apiCalls: 0, userTurns: 0, models: {}, totalInput: 0, totalOutput: 0,
     totalCacheCreate: 0, totalCacheRead: 0, peakContext: 0,
+    // TTL-split cache writes (Phase 1.4): exposed for the #46829
+    // detector — when 1h ratio collapses, the sub-tier had a silent
+    // regression to 5m even though ENABLE_PROMPT_CACHING_1H is set.
+    totalCacheCreate5m: 0, totalCacheCreate1h: 0,
     tools: {}, mcps: {}, thinkingTurns: 0, agentSpawns: 0,
     firstTs: null, lastTs: null,
-    // Rolling window of per-turn output tokens, newest last. Feeds the
-    // Tokens-line sparkline (FEAT-08).
+    // Rolling windows (newest last). recentTurnsOutput feeds the
+    // sparkline; the cache series feed the rolling-window cache %
+    // (Phase 1.4) which catches current cache regressions that the
+    // session-cumulative figure dilutes.
     recentTurnsOutput: [],
+    recentTurnsCacheCreate: [],
+    recentTurnsCacheRead: [],
   };
   try {
     for (const line of readFileSync(jsonlPath, 'utf8').split('\n')) {
@@ -54,13 +63,21 @@ export function analyzeSession(jsonlPath) {
           const outTok = u.output_tokens || 0;
           const ccTok = u.cache_creation_input_tokens || 0;
           const crTok = u.cache_read_input_tokens || 0;
+          const cc5m = u.cache_creation?.ephemeral_5m_input_tokens || 0;
+          const cc1h = u.cache_creation?.ephemeral_1h_input_tokens || 0;
           s.totalInput += inTok;
           s.totalOutput += outTok;
           s.totalCacheCreate += ccTok;
           s.totalCacheRead += crTok;
+          s.totalCacheCreate5m += cc5m;
+          s.totalCacheCreate1h += cc1h;
           // Rolling window of per-turn output tokens for the sparkline
           s.recentTurnsOutput.push(outTok);
           if (s.recentTurnsOutput.length > RECENT_TURNS_TRACKED) s.recentTurnsOutput.shift();
+          s.recentTurnsCacheCreate.push(ccTok);
+          if (s.recentTurnsCacheCreate.length > RECENT_TURNS_TRACKED) s.recentTurnsCacheCreate.shift();
+          s.recentTurnsCacheRead.push(crTok);
+          if (s.recentTurnsCacheRead.length > RECENT_TURNS_TRACKED) s.recentTurnsCacheRead.shift();
           // Peak context = largest single-turn prefill (input + cache_read + cache_create).
           // Proxies "max tokens loaded into the model at any point this session".
           const turnContext = inTok + crTok + ccTok;
@@ -142,7 +159,11 @@ function poll() {
   if (now - lastHistoryWrite >= HISTORY_INTERVAL_MS && results.length > 0) {
     lastHistoryWrite = now;
     for (const r of results) {
-      const burn = r.dur > 0 ? Math.round(r.totalOutput / r.dur) : 0;
+      const model = Object.keys(r.models ?? {})[0] ?? 'unknown';
+      const burn = costWeightedBurnRate(
+        { ...r, durationMin: r.dur ?? 0 },
+        model,
+      );
       writeHistoryEntry({
         sessionId: r.sid,
         fiveHourPct: null,
@@ -150,7 +171,7 @@ function poll() {
         sessionBurnRate: burn,
         contextPct: 0,
         signal: 'nominal',
-        model: Object.keys(r.models ?? {})[0] ?? 'unknown',
+        model,
         effort: 'high',
       });
     }

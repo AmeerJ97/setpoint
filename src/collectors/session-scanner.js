@@ -10,6 +10,21 @@
  */
 import { readJson } from '../data/jsonl.js';
 import { TOKEN_STATS_LATEST, tokenStatsFileFor } from '../data/paths.js';
+import { costWeightedBurnRate } from '../analytics/cost.js';
+
+/**
+ * Pick the most-frequently-used model from the daemon's per-session
+ * model-counts map. Used to attribute the cost-weighted burn rate to
+ * the right pricing row.
+ */
+function primaryModel(models) {
+  if (!models || typeof models !== 'object') return null;
+  let best = null, bestN = -1;
+  for (const [name, n] of Object.entries(models)) {
+    if (typeof n === 'number' && n > bestN) { bestN = n; best = name; }
+  }
+  return best;
+}
 
 /**
  * @typedef {object} TokenStats
@@ -29,9 +44,12 @@ import { TOKEN_STATS_LATEST, tokenStatsFileFor } from '../data/paths.js';
 function emptyTotals() {
   return {
     totalInput: 0, totalOutput: 0, totalCacheCreate: 0, totalCacheRead: 0,
+    totalCacheCreate5m: 0, totalCacheCreate1h: 0,
     apiCalls: 0, burnRate: 0, tools: {}, mcps: {}, agentSpawns: 0,
     durationMin: 0, peakContext: 0,
     recentTurnsOutput: [],
+    recentTurnsCacheCreate: [],
+    recentTurnsCacheRead: [],
   };
 }
 
@@ -46,6 +64,8 @@ function normalizeRecord(s) {
   totals.totalOutput      = s.totalOutput      ?? 0;
   totals.totalCacheCreate = s.totalCacheCreate ?? 0;
   totals.totalCacheRead   = s.totalCacheRead   ?? 0;
+  totals.totalCacheCreate5m = s.totalCacheCreate5m ?? 0;
+  totals.totalCacheCreate1h = s.totalCacheCreate1h ?? 0;
   totals.apiCalls         = s.apiCalls         ?? 0;
   totals.agentSpawns      = s.agentSpawns      ?? 0;
   totals.durationMin      = s.durationMin      ?? s.dur ?? 0;
@@ -55,16 +75,24 @@ function normalizeRecord(s) {
   totals.tools            = { ...(s.tools ?? {}) };
   totals.mcps             = { ...(s.mcps  ?? {}) };
   totals.recentTurnsOutput = Array.isArray(s.recentTurnsOutput) ? s.recentTurnsOutput.slice() : [];
+  totals.recentTurnsCacheCreate = Array.isArray(s.recentTurnsCacheCreate) ? s.recentTurnsCacheCreate.slice() : [];
+  totals.recentTurnsCacheRead = Array.isArray(s.recentTurnsCacheRead) ? s.recentTurnsCacheRead.slice() : [];
+  totals.primaryModel = primaryModel(s.models);
 
   if (totals.durationMin > 0) {
-    totals.burnRate = Math.round(totals.totalOutput / totals.durationMin);
+    totals.burnRate = costWeightedBurnRate(totals, totals.primaryModel);
   }
   return totals;
 }
 
 /**
- * Read this session's cached token stats. Scoped to sessionId when
- * provided; falls back to legacy aggregated cache otherwise.
+ * Read this session's cached token stats. Strictly session-scoped: when
+ * a sessionId is known, only that session's record counts. A fresh
+ * session must show zero stats, not the legacy cross-session aggregate
+ * — otherwise the HUD shows impossible numbers on turn 1 (e.g. 243m
+ * duration, $21 cost, 800K output on a session that hasn't sent a
+ * message yet).
+ *
  * @param {string|null} [sessionId]
  * @returns {TokenStats|null}
  */
@@ -72,40 +100,18 @@ export function readCachedTokenStats(sessionId = null) {
   if (sessionId) {
     const record = readJson(tokenStatsFileFor(sessionId));
     if (record) return normalizeRecord(record);
-  }
-
-  const legacy = readJson(TOKEN_STATS_LATEST);
-  if (!legacy?.sessions?.length) return null;
-
-  // Legacy path: file contained all sessions. If we can match by id
-  // inside the aggregate, return only that session's row. Otherwise
-  // aggregate (v1 behaviour) for one render cycle so the HUD shows
-  // something non-empty until the daemon writes a per-session file.
-  if (sessionId) {
-    const row = legacy.sessions.find(s => s.sid === sessionId);
+    // Per-session file not yet written — this IS a fresh session.
+    // Legacy aggregate also has a row keyed by sid? Use only that row.
+    const legacy = readJson(TOKEN_STATS_LATEST);
+    const row = legacy?.sessions?.find(s => s.sid === sessionId);
     if (row) return normalizeRecord(row);
+    return null;
   }
 
-  const totals = emptyTotals();
-  for (const s of legacy.sessions) {
-    totals.totalInput       += s.totalInput       ?? 0;
-    totals.totalOutput      += s.totalOutput      ?? 0;
-    totals.totalCacheCreate += s.totalCacheCreate ?? 0;
-    totals.totalCacheRead   += s.totalCacheRead   ?? 0;
-    totals.apiCalls         += s.apiCalls         ?? 0;
-    totals.agentSpawns      += s.agentSpawns      ?? 0;
-    totals.durationMin      += s.dur              ?? 0;
-    for (const [tool, count] of Object.entries(s.tools ?? {})) {
-      totals.tools[tool] = (totals.tools[tool] ?? 0) + count;
-    }
-    for (const [mcp, count] of Object.entries(s.mcps ?? {})) {
-      totals.mcps[mcp] = (totals.mcps[mcp] ?? 0) + count;
-    }
-  }
-  if (totals.durationMin > 0) {
-    totals.burnRate = Math.round(totals.totalOutput / totals.durationMin);
-  }
-  return totals;
+  // No sessionId passed — no cached stats to trust. Don't aggregate
+  // across sessions; that produces the "fresh session shows cumulative
+  // totals" bug reported on 2026-04-20.
+  return null;
 }
 
 /**
