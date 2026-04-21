@@ -57,7 +57,7 @@ at `~/.claude/plugins/claude-hud/guard-disabled`.
 | grey_step | `tengu_grey_step` | `false` (effort reducer v1) |
 | grey_step2 | `tengu_grey_step2.enabled` | `false` (medium effort override) |
 | grey_wool | `tengu_grey_wool` | `false` (effort reducer v3) |
-| thinking | `tengu_crystal_beam.budgetTokens` | `128000` (restores thinking budget) |
+| thinking | `tengu_crystal_beam.budgetTokens` | `128000` (Opus 4.6 and earlier only — auto-skipped on fresh install because Opus 4.7 rejects `thinking.budget_tokens` with a 400. Re-enable with `setpoint-guard unskip thinking` on Opus 4.6.) |
 | willow_mode | `tengu_willow_mode` | `""` (disables "hint" downgrade) |
 | compact_max | `tengu_sm_compact_config.maxTokens` | `200000` |
 | compact_init | `tengu_sm_config.minimumMessageTokensToInit` | `500000` |
@@ -112,8 +112,9 @@ Runs daily (cron or systemd timer) and on-demand.
 Display engine reads and surfaces issues on the HUD.
 
 ### 5. Daily advisor (`src/advisor/`)
-Runs every 24 hours of active usage (or on-demand) to produce actionable
-recommendations based on accumulated data.
+Runs daily while `daily-advisor.timer` is loaded (wall-clock `OnBootSec=1d` +
+`OnUnitActiveSec=1d`), or on-demand. Produces actionable recommendations
+based on accumulated data.
 
 **Analyses:**
 - Usage efficiency score: ratio of productive output (files written, tools used)
@@ -132,6 +133,21 @@ recommendations based on accumulated data.
 **Output:** Markdown report at ~/.claude/plugins/claude-hud/daily-report.md
 Also surfaces one-line summary on the HUD Advisor line.
 
+**On-demand drilldown:** `setpoint advisor status [--json]` renders the
+current `Recommendation` (tier, signal, action, confidence), the live
+metrics block (burnVelocity, reads/edits/ratio, peakActive, TTE), the
+personal P50/P90/P10 baselines, the peak/off-peak burn split, the
+session's reversals-per-1k rate, and the tail of the most recent
+`daily-report.md`. Use it when the one-line HUD summary isn't enough
+and you don't want to wait for the next timer run. Parallels
+`setpoint guard status`.
+
+The HUD Advisor line also carries a trailing salience segment — the
+single most-anomalous metric for the current session (`⚡ burn x× P50`,
+`◆ peak n%`, or `◐ R:E r`) — and a warn badge when reasoning reversals
+exceed 25/1k tool calls. Both are silent when no baseline is available,
+never rendered as placeholders.
+
 ### 6. Anomaly detector (`src/anomaly/`)
 Real-time alerting for unusual patterns. Runs continuously alongside display engine.
 
@@ -143,6 +159,10 @@ Real-time alerting for unusual patterns. Runs continuously alongside display eng
 - Context thrashing: compaction fires >N times in a session. Indicates session
   is too long or context is being wasted. Recommend /clear or restart.
 - MCP failure streak: same MCP fails 3+ times consecutively. Suggest disabling.
+- Reasoning reversals: assistant output contains >25 retraction phrases
+  ("wait,", "actually,", "let me fix") per 1000 tool calls. Suggests the
+  model is thrashing instead of converging. Rides the Advisor line as a
+  trailing warn badge.
 - GrowthBook escalation: guard activations spike (>20/hour). Indicates Anthropic
   changed sync frequency — user should be aware.
 - Config tampering: ~/.claude.json modified by process other than guard or user.

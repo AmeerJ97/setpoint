@@ -54,9 +54,11 @@ systemctl --user start claude-quality-guard
 ```
 setpoint                         render HUD (stdin JSON → 8 lines to stdout)
 setpoint guard status [--json]   drilldown of the 17-category enforcement surface
+setpoint context [--session <id>] [--json]   replicate the native /context bucket grid
 setpoint demo                    render the HUD in every color / glyph mode
 setpoint health                  run the health auditor once
 setpoint advisor                 run the daily advisor once
+setpoint advisor status [--json] drilldown: live recommendation, metrics, baselines, peak split, reversals, report tail
 ```
 
 `setpoint guard status` prints a three-column table showing, per category, whether it is `held` / `drift` / `skipped`, the last time the guard touched it, and the expected-vs-actual value of every flag under it. `--json` emits the same schema for monitoring pipelines. The command exits non-zero when any category has drifted.
@@ -76,7 +78,7 @@ setpoint advisor                 run the daily advisor once
 | grey_step | `tengu_grey_step` | `false` |
 | grey_step2 | `tengu_grey_step2.enabled` | `false` |
 | grey_wool | `tengu_grey_wool` | `false` |
-| thinking | `tengu_crystal_beam.budgetTokens` | `128000` |
+| thinking | `tengu_crystal_beam.budgetTokens` | `128000` (Opus 4.6 and earlier; auto-skipped on install for Opus 4.7 — see below) |
 | willow_mode | `tengu_willow_mode` | `""` |
 | compact_max | `tengu_sm_compact_config.maxTokens` | `200000` |
 | compact_init | `tengu_sm_config.minimumMessageTokensToInit` | `500000` |
@@ -99,6 +101,13 @@ Background on why the guard exists:
 [anthropics/claude-code#41477](https://github.com/anthropics/claude-code/issues/41477),
 [#42796](https://github.com/anthropics/claude-code/issues/42796),
 [#28941](https://github.com/anthropics/claude-code/issues/28941).
+
+## Opus 4.7 compatibility
+
+Claude Opus 4.7 (released 2026-04-16) introduced breaking API changes that intersect with the guard:
+
+- `thinking: {type: "enabled", budget_tokens: N}` returns 400 — Opus 4.7 requires `thinking: {type: "adaptive"}`. The `thinking` category pinned `tengu_crystal_beam.budgetTokens=128000`, which the CLI relayed onto the wire. **`scripts/install-guard.sh` now auto-creates `thinking.skip` on fresh installs** so Opus 4.7 users are safe by default. Opus 4.6 users can re-enable with `setpoint-guard unskip thinking`.
+- `temperature`, `top_p`, `top_k` also 400 on Opus 4.7. These are serialized from CLI runtime state — not GrowthBook — so the file-watcher guard has no handle on them. An optional mitmproxy addon at [`tools/mitm/`](tools/mitm/README.md) rewrites outbound request bodies to strip them on Opus 4.7 requests. The addon is **opt-in**; the file-watcher stays the primary control plane.
 
 ## Anomaly detection
 

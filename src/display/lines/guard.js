@@ -15,6 +15,12 @@
 import { dim, green, yellow, red, cyan } from '../colors.js';
 import { padLabel } from '../format.js';
 import { loadDefaults } from '../../data/defaults.js';
+import {
+  RE_RATIO_HEALTHY,
+  RE_RATIO_WARN,
+  countReadEdits,
+  calculateRatio,
+} from '../../anomaly/constants.js';
 
 const SEP = ` ${dim('│')} `;
 
@@ -126,16 +132,91 @@ export function renderGuardLine(ctx) {
     parts.push(dim('quiet'));
   }
 
-  // 17-glyph ribbon — wide-mode only. One char per category, color-coded.
-  // Skipped categories use a hollow circle so they read as "intentional gap"
-  // rather than "broken"; recently-reverted ones light up cyan to draw the
-  // eye to the noisy flags.
-  if (!narrow) {
-    const ribbon = renderRibbon(guard);
-    if (ribbon) parts.push(ribbon);
-  }
+  // R:E quality badge — moved here from the Tokens line (HUD-SPEC §7).
+  // The ratio is a reasoning-quality signal and belongs next to the other
+  // quality-enforcement state. Wide mode gets the full `(Nr/Me) status`
+  // trailer; narrow mode keeps just the colored ratio so the column still
+  // surfaces the signal in 80-col terminals.
+  const re = deriveReadEditBadge(ctx, narrow);
+  if (re) parts.push(re);
+
+  // 17-glyph ribbon — wide-mode preferred. One char per category,
+  // color-coded. Skipped categories use a hollow circle so they read as
+  // "intentional gap" rather than "broken"; recently-reverted ones light
+  // up cyan to draw the eye to the noisy flags. Narrow mode can't afford
+  // 17 cells, so it falls back to a single-char digest of the most recent
+  // reverted category's shade — heatmap signal stays visible even below
+  // 100 cols.
+  const ribbon = narrow ? renderRibbonDigest(guard) : renderRibbon(guard);
+  if (ribbon) parts.push(ribbon);
 
   return `${dim(label)} ${parts.join(SEP)}`;
+}
+
+/**
+ * Render the R:E badge. Wide: `R:E 4.2 (28r/7e) healthy`. Narrow: `R:E 4.2`.
+ * Returns null when there's no read/edit activity yet — no placeholder.
+ * @param {import('../renderer.js').RenderContext} ctx
+ * @param {boolean} narrow
+ * @returns {string|null}
+ */
+function deriveReadEditBadge(ctx, narrow) {
+  const metrics = ctx.advisory?.metrics;
+  let reads, edits, ratio;
+  if (metrics && (metrics.reads > 0 || metrics.edits > 0)) {
+    reads = metrics.reads; edits = metrics.edits;
+    ratio = Number.isFinite(metrics.ratio)
+      ? metrics.ratio
+      : calculateRatio(reads, edits);
+  } else {
+    const c = countReadEdits(ctx.toolCounts ?? {});
+    reads = c.reads; edits = c.edits;
+    ratio = calculateRatio(reads, edits);
+  }
+  if (reads <= 0 && edits <= 0) return null;
+
+  const infinite = !Number.isFinite(ratio);
+  const ratioStr = infinite ? '\u221e' : ratio.toFixed(1);
+  const colorFn = infinite || ratio >= RE_RATIO_HEALTHY ? green
+                : ratio >= RE_RATIO_WARN               ? yellow
+                : red;
+  const status = infinite || ratio >= RE_RATIO_HEALTHY ? 'healthy'
+               : ratio >= RE_RATIO_WARN               ? 'ok'
+               : 'degraded';
+
+  // Narrow: ratio-only, no counts, no status word. Wide: full trailer.
+  if (narrow) {
+    if (edits <= 0) return `${cyan('R:E')} ${dim('--')}`;
+    return `${cyan('R:E')} ${colorFn(ratioStr)}`;
+  }
+  if (edits <= 0) {
+    return `${cyan('R:E')} ${dim(`-- (${reads}r/0e)`)}`;
+  }
+  return `${cyan('R:E')} ${colorFn(ratioStr)} ${dim(`(${reads}r/${edits}e)`)} ${colorFn(status)}`;
+}
+
+/**
+ * Narrow-mode ribbon digest — a single cell summarizing the noisiest flag.
+ * Priority:
+ *   - if a flag has just been reverted → cyan ▲ (same glyph as wide mode)
+ *   - else peak per-category shade (the worst of the revert counts)
+ *   - else a single green █ so the affordance remains visible
+ * Keeps the heatmap signal alive in terminals below the 100-col cut.
+ * @returns {string|null}
+ */
+function renderRibbonDigest(guard) {
+  if (!guard) return null;
+  if (guard.lastFlag) {
+    const head = guard.lastFlag.split('.')[0];
+    if (FLAG_TO_CATEGORY[head]) return cyan('▲');
+  }
+  let peak = 0;
+  for (const [flag, n] of Object.entries(guard.flagCounts ?? {})) {
+    const head = flag.split('.')[0];
+    if (!FLAG_TO_CATEGORY[head]) continue;
+    if (n > peak) peak = n;
+  }
+  return shadeForCount(peak);
 }
 
 /**

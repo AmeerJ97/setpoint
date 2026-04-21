@@ -16,6 +16,7 @@ import { checkContextPressure } from './rules/context-pressure.js';
 import { checkToolDiversity } from './rules/tool-diversity.js';
 import { checkSessionEfficiency } from './rules/session-efficiency.js';
 import { checkMcpFailures } from './rules/mcp-failure.js';
+import { checkReversals } from './rules/reversals.js';
 
 /**
  * Run all anomaly checks against session data.
@@ -70,6 +71,13 @@ export function runAnomalyChecks(sessionData) {
       if (a.triggered) alerts.push(a);
     }
   }
+
+  // Reasoning reversals check — rides the existing warn channel.
+  const reversals = checkReversals({
+    reversalsPer1k: sessionData.reversalsPer1k,
+    toolCallCount: sessionData.toolCallCount,
+  });
+  if (reversals?.triggered) alerts.push(reversals);
 
   // Background drain checks (Cowork, chrome hosts, Desktop agents)
   try {

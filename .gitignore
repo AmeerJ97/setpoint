@@ -2,6 +2,17 @@ node_modules/
 *.log
 .claude/
 .claude.json
+.research/
+.research/*
 
 # Rust guard build artifacts — binary is built locally via scripts/build-guard.sh
 src/guard/rust/target/
+
+# Research debris — research/ itself is tracked as product input; exclude
+# superseded variants and scratch files so they don't leak into commits.
+research/*-old.py
+research/**/*.tmp
+
+# Python test cache
+__pycache__/
+.pytest_cache/

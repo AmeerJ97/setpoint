@@ -45,6 +45,10 @@ async function run() {
       return 0;
     }
     case 'advisor': {
+      if (sub === 'status') {
+        const mod = await import('./advisor-status.js');
+        return mod.main([sub, ...rest]);
+      }
       await import('../advisor/index.js');
       return 0;
     }
@@ -78,7 +82,8 @@ Usage:
   setpoint                              render HUD (reads Claude Code statusLine JSON on stdin)
   setpoint guard status [--json]        drilldown of the 17-category enforcement surface
   setpoint health                       run the health auditor
-  setpoint advisor                      run the daily advisor
+  setpoint advisor                      run the daily advisor (write daily-report.md)
+  setpoint advisor status [--json]      drilldown of the live recommendation engine
   setpoint context [--json] [--session] approximate the native /context bucket grid
   setpoint demo                         render the HUD in every color/glyph mode
   setpoint help                         show this message

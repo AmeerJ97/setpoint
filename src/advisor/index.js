@@ -18,11 +18,11 @@ import { analyzeRtkEfficiency } from './analyses/rtk-efficiency.js';
 import { readRtkStats } from '../collectors/rtk-reader.js';
 import { readGuardStatus } from '../collectors/guard-reader.js';
 import { computeBaselines } from './baselines.js';
+import { computePeakSplit } from './peak-split.js';
 import { countReasoningReversals, reversalsPer1k } from './reversals.js';
 import { calculateRates } from '../analytics/rates.js';
 import { computeAdvisory } from '../analytics/advisor.js';
 import { findActiveSessions, findSessionJsonl } from '../data/session.js';
-import { getRatesTuning } from '../data/defaults.js';
 
 async function generateReport() {
   const sessions = readJsonlWindow(TOKEN_STATS_FILE, 7 * 86400_000);
@@ -140,43 +140,6 @@ function synthesizeRecommendation(latestEntry, history) {
 }
 
 /**
- * Split the trailing-week burn-rate samples by whether they fell in
- * the configured peak window (default 5–11 PT) and compute the ratio.
- */
-function computePeakSplit(history) {
-  const peak = getRatesTuning().peakHours;
-  if (!peak.enabled) {
-    return { peakAvg: 0, offPeakAvg: 0, peakSamples: 0, offPeakSamples: 0, ratio: null };
-  }
-  let peakSum = 0, offSum = 0, peakN = 0, offN = 0;
-  for (const e of history) {
-    if (!e.ts || !Number.isFinite(e.session_burn_rate)) continue;
-    const hour = localHour(new Date(e.ts).getTime(), peak.timezone);
-    const inPeak = peak.startHour < peak.endHour
-      ? hour >= peak.startHour && hour < peak.endHour
-      : hour >= peak.startHour || hour < peak.endHour;
-    if (inPeak) { peakSum += e.session_burn_rate; peakN++; }
-    else        { offSum  += e.session_burn_rate; offN++;  }
-  }
-  const peakAvg = peakN > 0 ? peakSum / peakN : 0;
-  const offPeakAvg = offN > 0 ? offSum / offN : 0;
-  const ratio = offPeakAvg > 0 ? peakAvg / offPeakAvg : null;
-  return { peakAvg, offPeakAvg, peakSamples: peakN, offPeakSamples: offN, ratio };
-}
-
-function localHour(epochMs, timezone) {
-  try {
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone, hour: 'numeric', hour12: false,
-    });
-    const h = parseInt(fmt.format(new Date(epochMs)), 10);
-    return Number.isFinite(h) ? (h === 24 ? 0 : h) : 0;
-  } catch {
-    return new Date(epochMs).getUTCHours();
-  }
-}
-
-/**
  * Walk recently-active session JSONLs and tally reversal phrases in
  * assistant text. Out-of-scope sessions (older than 24h, missing files)
  * are skipped silently.
@@ -249,4 +212,5 @@ if (argvPath) {
   catch { if (argvPath === scriptPath) generateReport(); }
 }
 
-export { generateReport, computePeakSplit, scanReversalsForActiveSessions };
+export { generateReport, scanReversalsForActiveSessions };
+export { computePeakSplit } from './peak-split.js';

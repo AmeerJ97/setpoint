@@ -29,14 +29,14 @@ declare -A CATEGORIES=(
   [quiet]="Disables quiet modes that suppress tool output"
   [summarize]="Prevents tool result compression/summarization"
   [maxtokens]="Sets max output tokens to 128K"
-  [truncation]="Sets tool output truncation cap to 500K"
+  [truncation]="Sets tool output truncation cap to 500K (every per-tool subkey)"
   [refresh_ttl]="Extends refresh TTL to 1 year"
   [mcp_connect]="Disables cloud MCP connectors"
   [bridge]="Disables Claude Desktop bridge"
   [grey_step]="Disables effort reducer v1"
   [grey_step2]="Disables medium effort override"
   [grey_wool]="Disables effort reducer v3"
-  [thinking]="Restores thinking budget to 128K"
+  [thinking]="Restores thinking budget to 128K (Opus 4.6 and earlier only; skip on Opus 4.7 — API rejects thinking.budget_tokens)"
   [willow_mode]="Disables capability downgrade mode"
   [compact_max]="Sets compaction survival to 200K tokens"
   [compact_init]="Sets compaction trigger to 500K tokens"
@@ -132,19 +132,27 @@ if "maxtokens" in active:
         gb["tengu_amber_wren"]["maxTokens"] = 128000
         changed.append("tengu_amber_wren.maxTokens")
 
-# --- truncation: tengu_pewter_kestrel.global → 500000 ---
+# --- truncation: tengu_pewter_kestrel.{all subkeys} → 500000 ---
+# Must mirror Rust overrides.rs PEWTER_KESTREL_TOOLS. Setting only .global
+# silently loses to per-tool defaults (Bash=30000, Grep=20000) that revert
+# independently.
 if "truncation" in active:
-    if gb.get("tengu_pewter_kestrel", {}).get("global") != 500000:
-        if "tengu_pewter_kestrel" not in gb or not isinstance(gb["tengu_pewter_kestrel"], dict):
-            gb["tengu_pewter_kestrel"] = {}
-        gb["tengu_pewter_kestrel"]["global"] = 500000
-        changed.append("tengu_pewter_kestrel.global")
+    pewter_tools = ["global", "Bash", "PowerShell", "Grep", "Snip",
+                    "StrReplaceBasedEditTool", "BashSearchTool"]
+    if "tengu_pewter_kestrel" not in gb or not isinstance(gb["tengu_pewter_kestrel"], dict):
+        gb["tengu_pewter_kestrel"] = {}
+    pk = gb["tengu_pewter_kestrel"]
+    for tool in pewter_tools:
+        if pk.get(tool) != 500000:
+            pk[tool] = 500000
+            changed.append("tengu_pewter_kestrel." + tool)
 
-# --- refresh_ttl: tengu_willow_refresh_ttl_hours → 8760 ---
+# --- refresh_ttl: both ttl keys → 8760 (live cache exposes both) ---
 if "refresh_ttl" in active:
-    if gb.get("tengu_willow_refresh_ttl_hours") != 8760:
-        gb["tengu_willow_refresh_ttl_hours"] = 8760
-        changed.append("tengu_willow_refresh_ttl_hours")
+    for key in ["tengu_willow_refresh_ttl_hours", "tengu_willow_census_ttl_hours"]:
+        if gb.get(key) != 8760:
+            gb[key] = 8760
+            changed.append(key)
 
 # --- mcp_connect: tengu_claudeai_mcp_connectors → false ---
 if "mcp_connect" in active:
@@ -445,6 +453,10 @@ cmd_status() {
   fi
 }
 
+cmd_apply() {
+  apply_overrides
+}
+
 cmd_enable() {
   rm -f "$DISABLED_FLAG"
   echo "Quality guard ENABLED. Run '$(basename "$0") start' or 'systemctl --user start claude-quality-guard' to activate."
@@ -469,9 +481,10 @@ case "${1:-}" in
   skip)       cmd_skip "${2:-}" ;;
   unskip)     cmd_unskip "${2:-}" ;;
   reset)      cmd_reset ;;
+  apply)      cmd_apply ;;
   _watch)     watch_loop ;;
   *)
-    echo "Usage: $(basename "$0") {start|stop|status|enable|disable|config|skip|unskip|reset}"
+    echo "Usage: $(basename "$0") {start|stop|status|enable|disable|apply|config|skip|unskip|reset}"
     echo ""
     echo "Claude Quality Guard — protects ~/.claude.json quality overrides"
     echo ""
@@ -485,6 +498,7 @@ case "${1:-}" in
     echo "  skip <cat>      Disable a category (create .skip file)"
     echo "  unskip <cat>    Re-enable a category (remove .skip file)"
     echo "  reset           Remove all .skip files (restore defaults)"
+    echo "  apply           Apply overrides once and exit (useful for tests)"
     echo ""
     echo "Categories (all ON by default when guard is enabled):"
     for cat in $(echo "${!CATEGORIES[@]}" | tr ' ' '\n' | sort); do

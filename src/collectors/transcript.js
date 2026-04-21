@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { createHash } from 'node:crypto';
 import { TRANSCRIPT_CACHE_DIR } from '../data/paths.js';
+import { countReasoningReversals } from '../advisor/reversals.js';
 
 /**
  * @typedef {object} TranscriptData
@@ -32,7 +33,7 @@ function getCachePath(transcriptPath) {
  * @returns {Promise<TranscriptData>}
  */
 export async function parseTranscript(transcriptPath) {
-  const empty = { tools: [], agents: [], todos: [] };
+  const empty = { tools: [], agents: [], todos: [], reversalCount: 0, toolCallCount: 0 };
   if (!transcriptPath || !existsSync(transcriptPath)) return empty;
 
   let stat;
@@ -58,6 +59,10 @@ export async function parseTranscript(transcriptPath) {
   let sessionStart;
   let sessionName;
   let parsedCleanly = false;
+  // Reversals + absolute tool count. The `tools` array is sliced to the
+  // last 20 for display; the anomaly rule needs the full count.
+  let reversalCount = 0;
+  let toolCallCount = 0;
 
   try {
     const rl = createInterface({
@@ -78,7 +83,11 @@ export async function parseTranscript(transcriptPath) {
           sessionName = sessionName ?? entry.slug;
         }
 
-        processEntry(entry, ts, toolMap, agentMap, taskIdToIndex, latestTodos);
+        const delta = processEntry(entry, ts, toolMap, agentMap, taskIdToIndex, latestTodos);
+        if (delta) {
+          reversalCount += delta.reversals;
+          toolCallCount += delta.tools;
+        }
       } catch { /* skip malformed */ }
     }
     parsedCleanly = true;
@@ -90,6 +99,8 @@ export async function parseTranscript(transcriptPath) {
     todos: latestTodos,
     sessionStart,
     sessionName,
+    reversalCount,
+    toolCallCount,
   };
 
   if (parsedCleanly) {
@@ -108,10 +119,18 @@ export async function parseTranscript(transcriptPath) {
 
 function processEntry(entry, ts, toolMap, agentMap, taskIdToIndex, latestTodos) {
   const content = entry.message?.content;
-  if (!content || !Array.isArray(content)) return;
+  if (!content || !Array.isArray(content)) return null;
+
+  const isAssistant = entry.type === 'assistant' || entry.message?.role === 'assistant';
+  let reversals = 0;
+  let tools = 0;
 
   for (const block of content) {
+    if (isAssistant && block.type === 'text' && typeof block.text === 'string') {
+      reversals += countReasoningReversals(block.text);
+    }
     if (block.type === 'tool_use' && block.id && block.name) {
+      tools += 1;
       if (block.name === 'Task' || block.name === 'Agent') {
         const input = block.input ?? {};
         agentMap.set(block.id, {
@@ -163,6 +182,8 @@ function processEntry(entry, ts, toolMap, agentMap, taskIdToIndex, latestTodos) 
       if (agent) { agent.status = 'completed'; agent.endTime = ts; }
     }
   }
+
+  return { reversals, tools };
 }
 
 function extractTarget(name, input) {
@@ -200,6 +221,8 @@ function serialize(data) {
     todos: data.todos.map(t => ({ ...t })),
     sessionStart: data.sessionStart?.toISOString(),
     sessionName: data.sessionName,
+    reversalCount: data.reversalCount ?? 0,
+    toolCallCount: data.toolCallCount ?? 0,
   };
 }
 
@@ -210,5 +233,7 @@ function deserialize(data) {
     todos: data.todos.map(t => ({ ...t })),
     sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
     sessionName: data.sessionName,
+    reversalCount: data.reversalCount ?? 0,
+    toolCallCount: data.toolCallCount ?? 0,
   };
 }

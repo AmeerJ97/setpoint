@@ -96,11 +96,22 @@ good sessions run 6.6+ reads per edit; degraded sessions run ~2.0.
 
 ### Line 8: Advisor
 Single recommendation synthesised from rate projections and anomaly state.
+Layout (wide): `Advisor {gauge} {cur}→{proj} │ TTE {hms} │ conf:{low|med|high} │ {badge} [│ {salience}] [│ △ warn]`.
 - Green `▲ safe` — increase effort or use Opus
 - Dim `── nominal`
 - Yellow `▼ consider reducing — 82% 5hr used`
 - Red `⚠ throttle — will hit 5hr limit in 40min`
-- Red `⚠ ALERT: <anomaly>` — anomaly alerts override the normal advisor
+- Red `⚠ ALERT: <anomaly>` — critical anomalies override the normal advisor
+- Dim `~ on track — warming up` — low confidence + tier=ok (engine hasn't
+  seen enough data yet; badge never rendered at full green until `conf:med`)
+- Trailing salience segment (wide only, one at most, priority order):
+  - `⚡ burn {x}× P50` when burn velocity ≥ 2× personal P50
+  - `◆ peak {n}%` when peak-hour share ≥ 60%
+  - `◐ R:E {r}` when ratio below WARN and edits ≥ RE_MIN
+  Omitted when no baseline exists (never a placeholder).
+- Warn-level anomalies ride as a trailing `△ {message}` badge — the
+  main advisor content stays visible. Reasoning-reversals ≥ 25/1k tool
+  calls fires through this channel.
 
 ## Single-Column Layout
 
@@ -122,6 +133,11 @@ Abbreviate labels:
 
 Truncate MCP names to first 3 chars: `brv,ppl,sen`.
 Drop git file stats but keep branch name.
+
+Guard line narrow-mode fallback: the 17-char revert-frequency ribbon
+collapses to a single glyph (`▲` in the last-reverted category's shade)
+so the heatmap signal is still visible below 100 cols. R:E badge drops
+the `(28r/7e) healthy` tail and keeps colored `R:E 4.2`.
 
 ## Color Reference (ANSI)
 - White/bright:  `\x1b[1m` (active, loaded, in-use)

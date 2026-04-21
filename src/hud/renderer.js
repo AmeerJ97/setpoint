@@ -19,6 +19,7 @@ import { findActiveSessions } from '../data/session.js';
 import { readJson } from '../data/jsonl.js';
 import { HEALTH_REPORT_FILE } from '../data/paths.js';
 import { calculateRates } from '../analytics/rates.js';
+import { reversalsPer1k as reversalsPer1kRate } from '../advisor/reversals.js';
 import { costWeightedBurnRate, ewmaBurnRate } from '../analytics/cost.js';
 import { computeAdvisory } from '../analytics/advisor.js';
 import { runAnomalyChecks } from '../anomaly/detector.js';
@@ -90,6 +91,11 @@ async function main() {
     try {
       const currentUsage = stdin?.context_window?.current_usage ?? {};
 
+      const revRate = reversalsPer1kRate(
+        transcript.reversalCount ?? 0,
+        transcript.toolCallCount ?? 0,
+      );
+
       anomalies = runAnomalyChecks({
         // Token data
         outputTokens: currentUsage.output_tokens ?? 0,
@@ -106,6 +112,9 @@ async function main() {
         guardActivationsPerHour: guardStatus?.activationsPerHour ?? 0,
         // Tool data
         toolCounts,
+        toolCallCount: transcript.toolCallCount ?? 0,
+        // Reasoning reversals
+        reversalsPer1k: revRate,
         // Model
         modelName: modelNameForAdvisor,
       });

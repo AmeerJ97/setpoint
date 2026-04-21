@@ -21,6 +21,7 @@ const execFileAsync = promisify(execFile);
  * @property {string|null} topFlag - most frequently reverted flag today
  * @property {number} skippedCount - number of skipped override categories
  * @property {string[]} skippedCategories - names of skipped categories (subset of defaults.guard.categories)
+ * @property {Record<string, string>} skipReasons - optional single-line reason per skipped category, keyed by category name
  */
 
 /**
@@ -31,11 +32,34 @@ export async function readGuardStatus() {
   const { activationsToday, activationsLastHour, activationsPerHour, lastActivation, lastFlag, flagCounts, topFlag } = parseGuardLog();
   const skippedCategories = listSkippedCategories();
   const skippedCount = skippedCategories.length;
+  const skipReasons = readSkipReasons(skippedCategories);
 
   return {
     running, activationsToday, activationsLastHour, activationsPerHour,
-    lastActivation, lastFlag, flagCounts, topFlag, skippedCount, skippedCategories,
+    lastActivation, lastFlag, flagCounts, topFlag, skippedCount,
+    skippedCategories, skipReasons,
   };
+}
+
+/**
+ * Read optional `<cat>.skip.reason` sibling files for each skipped category.
+ * The reason is a single-line tag (e.g. `opus_4_7_incompatible`) that makes
+ * the skip state self-documenting on `setpoint guard status`.
+ * @param {string[]} cats
+ * @returns {Record<string, string>}
+ */
+function readSkipReasons(cats) {
+  const configDir = `${PLUGIN_DIR}/guard-config`;
+  const out = {};
+  for (const cat of cats) {
+    try {
+      const p = `${configDir}/${cat}.skip.reason`;
+      if (!existsSync(p)) continue;
+      const txt = readFileSync(p, 'utf8').split('\n')[0].trim();
+      if (txt) out[cat] = txt;
+    } catch { /* ignore malformed / unreadable reasons */ }
+  }
+  return out;
 }
 
 /**

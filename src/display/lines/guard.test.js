@@ -38,7 +38,8 @@ test('all categories held (no skips, no activations) shows ✓17/17 quiet', () =
   assert.match(line, /✓17\/17/);
   assert.match(line, /quiet/);
   assert.doesNotMatch(line, / held/, 'redundant "held" text dropped');
-  assert.doesNotMatch(line, /R:E/, 'R:E moved to Tokens line');
+  // R:E badge only renders when there's read/edit activity. None in this fixture.
+  assert.doesNotMatch(line, /R:E/, 'no R:E without tool activity');
 });
 
 test('skipped categories render as a first-class state', () => {
@@ -74,7 +75,9 @@ test('activations collapse into a single "↻N today (last:X Nm)" field', () => 
   assert.doesNotMatch(line, /top:/);
 });
 
-test('narrow layout keeps the collapsed activity field and omits ribbon', () => {
+test('narrow layout keeps the collapsed activity field and the one-char ribbon digest', () => {
+  // `brevity` maps to the `swann_brevity` flag head, so a lastFlag of
+  // `swann_brevity` is a known-category revert → ▲ digest.
   const line = strip(renderGuardLine({
     narrow: true,
     guardStatus: {
@@ -82,14 +85,17 @@ test('narrow layout keeps the collapsed activity field and omits ribbon', () => 
       skippedCount: 0,
       activationsToday: 2,
       lastActivation: new Date(),
-      lastFlag: 'brevity',
+      lastFlag: 'swann_brevity',
       topFlag: 'summarize',
-      flagCounts: { brevity: 2 },
+      flagCounts: { swann_brevity: 2 },
     },
   }));
   assert.doesNotMatch(line, /top:/);
   assert.match(line, /↻2/);
-  assert.doesNotMatch(line, /[▇▆▅▄]/, 'ribbon shades suppressed in narrow mode');
+  // Narrow ribbon collapses to a single-char digest (▲ or a shade) so the
+  // heatmap signal stays visible below the 100-col cut.
+  assert.match(line, /▲/, 'expected ▲ digest for most-recently-reverted flag');
+  assert.doesNotMatch(line, /█{17}|▇{2,}/, 'no 17-wide ribbon in narrow mode');
 });
 
 test('total category count is read live from defaults.json (Phase 1.5)', () => {
@@ -235,7 +241,7 @@ test('ribbon shade darkens with revert count', () => {
   assert.match(l8, /▄/);
 });
 
-test('17-glyph ribbon is suppressed in narrow mode', () => {
+test('17-glyph ribbon is suppressed in narrow mode (digest replaces it)', () => {
   const line = strip(renderGuardLine({
     narrow: true,
     guardStatus: {
@@ -246,6 +252,65 @@ test('17-glyph ribbon is suppressed in narrow mode', () => {
       flagCounts: {},
     },
   }));
-  // Narrow mode should not render the ribbon (no run of 17 blocks).
+  // No 17-wide ribbon, but a single █ digest stays visible so the affordance
+  // doesn't disappear in narrow mode.
   assert.doesNotMatch(line, /█{17}/);
+  assert.match(line, /█/, 'digest renders a single cell');
+});
+
+test('R:E badge renders on Guard line wide mode with counts and status', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: {
+      running: true, skippedCount: 0, activationsToday: 0, flagCounts: {},
+    },
+    toolCounts: { Read: 28, Edit: 7 },
+  }));
+  assert.match(line, /R:E 4\.0 \(28r\/7e\) healthy/);
+});
+
+test('R:E badge yellow on ok band, red on degraded band', () => {
+  const ok = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: { running: true, skippedCount: 0, activationsToday: 0, flagCounts: {} },
+    toolCounts: { Read: 5, Edit: 2 },  // ratio 2.5 → between WARN(2.0) and HEALTHY(3.0)
+  }));
+  assert.match(ok, /R:E 2\.5 \(5r\/2e\) ok/);
+
+  const bad = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: { running: true, skippedCount: 0, activationsToday: 0, flagCounts: {} },
+    toolCounts: { Read: 4, Edit: 7 },  // ratio 0.57 → degraded
+  }));
+  assert.match(bad, /R:E 0\.6 \(4r\/7e\) degraded/);
+});
+
+test('R:E badge prefers advisory.metrics over raw toolCounts when present', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: { running: true, skippedCount: 0, activationsToday: 0, flagCounts: {} },
+    advisory: { metrics: { reads: 50, edits: 10, ratio: 5.0 } },
+    toolCounts: { Read: 1, Edit: 1 },
+  }));
+  assert.match(line, /R:E 5\.0 \(50r\/10e\) healthy/);
+});
+
+test('R:E badge narrow mode drops counts and status word', () => {
+  const line = strip(renderGuardLine({
+    narrow: true,
+    guardStatus: { running: true, skippedCount: 0, activationsToday: 0, flagCounts: {} },
+    toolCounts: { Read: 28, Edit: 7 },
+  }));
+  assert.match(line, /R:E 4\.0/);
+  assert.doesNotMatch(line, /\(28r\/7e\)/);
+  assert.doesNotMatch(line, /healthy/);
+});
+
+test('R:E badge renders dim when edits=0 (no division-by-zero confusion)', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: { running: true, skippedCount: 0, activationsToday: 0, flagCounts: {} },
+    toolCounts: { Read: 5, Edit: 0 },
+  }));
+  assert.match(line, /R:E -- \(5r\/0e\)/);
 });

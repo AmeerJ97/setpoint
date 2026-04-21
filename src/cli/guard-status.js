@@ -74,6 +74,27 @@ function readSkippedCategories() {
   } catch { return new Set(); }
 }
 
+/**
+ * Read the optional `<cat>.skip.reason` sibling tag for each skipped
+ * category. Returned as a Map so skip-reasons are self-documenting on the
+ * drilldown instead of every skip looking the same.
+ * @param {Iterable<string>} cats
+ * @returns {Map<string, string>}
+ */
+function readSkipReasons(cats) {
+  const dir = join(PLUGIN_DIR, 'guard-config');
+  const out = new Map();
+  for (const cat of cats) {
+    try {
+      const p = join(dir, `${cat}.skip.reason`);
+      if (!existsSync(p)) continue;
+      const txt = readFileSync(p, 'utf8').split('\n')[0].trim();
+      if (txt) out.set(cat, txt);
+    } catch { /* ignore */ }
+  }
+  return out;
+}
+
 function parseGuardLogForCategoryLastSeen() {
   // Map category → { flag, ts } for the most recent re-application
   // touching any flag in that category.
@@ -119,6 +140,7 @@ export function collectGuardState() {
   const descriptions = defaults.guard?.categories ?? {};
   const claudeJson = readClaudeJson();
   const skipped = readSkippedCategories();
+  const skipReasons = readSkipReasons(skipped);
   const lastSeen = parseGuardLogForCategoryLastSeen();
 
   const out = [];
@@ -146,6 +168,7 @@ export function collectGuardState() {
       lastSeen: seen?.ts ?? null,
       lastFlag: seen?.flag ?? null,
       description: descriptions[cat] ?? '',
+      skipReason: state === 'skipped' ? (skipReasons.get(cat) ?? null) : null,
     });
   }
   return out;
@@ -207,7 +230,13 @@ export function renderTable(rows) {
     const cat = row.category.padEnd(14);
     const age = row.lastSeen ? `${row.lastFlag ?? ''} ${formatAge(row.lastSeen)}` : '—';
     const ageCell = age.padEnd(16);
-    lines.push(`${stateCell}  ${cat}  ${DIM}${ageCell}${RESET}  ${row.description}`);
+    // When a category is skipped with a reason, render the reason inline in
+    // the description column so the drilldown answers "why is this skipped?"
+    // without the operator opening a sibling file.
+    const desc = row.state === 'skipped' && row.skipReason
+      ? `${row.description}${row.description ? ' ' : ''}${DIM}[${row.skipReason}]${RESET}`
+      : row.description;
+    lines.push(`${stateCell}  ${cat}  ${DIM}${ageCell}${RESET}  ${desc}`);
 
     for (const f of row.flags) {
       const diff = row.state === 'drift' && !deepEquals(f.actual, f.expected);

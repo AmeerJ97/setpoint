@@ -9,7 +9,24 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_DIR="$HOME/.config/systemd/user"
+PLUGIN_DIR="$HOME/.claude/plugins/claude-hud"
+GUARD_CONFIG_DIR="$PLUGIN_DIR/guard-config"
 mkdir -p "$SERVICE_DIR"
+mkdir -p "$GUARD_CONFIG_DIR"
+
+# Opus 4.7 (released 2026-04-16) rejects thinking.budget_tokens with a 400.
+# The `thinking` category pins tengu_crystal_beam.budgetTokens=128000, which
+# the CLI relays onto the wire. Auto-skip on fresh installs so Opus 4.7 users
+# are safe by default. Opus 4.6 users can re-enable via `guard unskip thinking`.
+if [[ ! -e "$GUARD_CONFIG_DIR/thinking.skip" ]]; then
+  touch "$GUARD_CONFIG_DIR/thinking.skip"
+fi
+# Tag the reason so `setpoint guard status` renders a self-documenting
+# "[opus_4_7_incompatible]" alongside the skipped row instead of leaving
+# the operator to go spelunking for "why is thinking skipped?".
+if [[ ! -e "$GUARD_CONFIG_DIR/thinking.skip.reason" ]]; then
+  printf 'opus_4_7_incompatible\n' > "$GUARD_CONFIG_DIR/thinking.skip.reason"
+fi
 
 RUST_BIN="${SCRIPT_DIR}/src/guard/rust/target/release/setpoint-guard"
 BASH_IMPL="${SCRIPT_DIR}/src/guard/claude-quality-guard.sh"

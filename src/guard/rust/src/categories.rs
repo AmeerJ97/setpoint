@@ -21,7 +21,7 @@ const ALL: &[Category] = &[
     Category { name: "grey_step",    description: "Disables effort reducer v1" },
     Category { name: "grey_step2",   description: "Disables medium effort override" },
     Category { name: "grey_wool",    description: "Disables effort reducer v3" },
-    Category { name: "thinking",     description: "Restores thinking budget to 128K" },
+    Category { name: "thinking",     description: "Restores thinking budget to 128K (Opus 4.6 and earlier only; skip on Opus 4.7 — API rejects thinking.budget_tokens)" },
     Category { name: "willow_mode",  description: "Disables capability downgrade mode" },
     Category { name: "compact_max",  description: "Sets compaction survival to 200K tokens" },
     Category { name: "compact_init", description: "Sets compaction trigger to 500K tokens" },

@@ -2,17 +2,11 @@
  * Line 4: Tokens — in:42K  out:9.5K  cache:████░░ 69%  burn:211t/m  18calls
  * Now with cache bar visualization and wider spacing.
  */
-import { cyan, dim, green, yellow, red, getCacheColor, getBurnColor, coloredBar, RESET } from '../colors.js';
+import { cyan, dim, getCacheColor, getBurnColor, coloredBar, RESET } from '../colors.js';
 
 const SEP = ` ${dim('│')} `;
 import { formatTokens, padLabel } from '../format.js';
 import { calculateCost, formatCost } from '../../analytics/cost.js';
-import {
-  RE_RATIO_HEALTHY,
-  RE_RATIO_WARN,
-  countReadEdits,
-  calculateRatio,
-} from '../../anomaly/constants.js';
 import { sparkline } from '../sparkline.js';
 
 /**
@@ -85,42 +79,10 @@ export function renderTokensLine(ctx) {
   // Session cost
   if (cost > 0) secondary.push(cyan(formatCost(cost)));
 
-  // RTK moved to the Context line — it's cache-related metadata, not a
-  // burn-rate metric. See context.js.
-
-  // Read:Edit quality badge — moved here from the Guard line. Belongs
-  // with the other token-level quality signals; has nothing to do with
-  // GrowthBook enforcement state.
-  const re = deriveReadEditRatio(ctx);
-  if (re) secondary.push(re);
+  // R:E quality badge lives on the Guard line (HUD-SPEC §7). Tokens line
+  // keeps burn/cost/cache, which is already dense.
 
   return `${dim(label)} ${primary.join('  ')}${SEP}${secondary.join('  ')}`;
-}
-
-/**
- * Compute the R:E badge from the anomaly-detector payload (preferred,
- * since it uses the same snapshot the anomaly rules ran against) or
- * fall back to the raw toolCounts on the context.
- * @param {import('../renderer.js').RenderContext} ctx
- * @returns {string|null}
- */
-function deriveReadEditRatio(ctx) {
-  const reAnomaly = ctx.anomalies?.find(a => a?.ratio !== undefined);
-  const toolCounts = ctx.toolCounts ?? {};
-  let reads, edits, ratio;
-  if (reAnomaly) {
-    reads = reAnomaly.reads; edits = reAnomaly.edits; ratio = reAnomaly.ratio;
-  } else {
-    const c = countReadEdits(toolCounts);
-    reads = c.reads; edits = c.edits; ratio = calculateRatio(reads, edits);
-  }
-  if (reads <= 0 && edits <= 0) return null;
-
-  const ratioStr = Number.isFinite(ratio) ? ratio.toFixed(1) : '\u221e';
-  const colorFn = ratio >= RE_RATIO_HEALTHY ? green
-                : ratio >= RE_RATIO_WARN    ? yellow
-                : red;
-  return `${cyan('R:E')} ${colorFn(ratioStr)} ${dim(`(${reads}r/${edits}e)`)}`;
 }
 
 const ROLLING_CACHE_TURNS = 10;

@@ -202,6 +202,49 @@ test('peak ⚡ glyph renders on advisor gauge when peak window active', () => {
   assert.match(line, /⚡/, 'expected ⚡ glyph on advisor when peak active');
 });
 
+test('low-confidence + tier=ok dims the badge and adds warming-up suffix', () => {
+  const raw = renderAdvisorLine({
+    narrow: false,
+    advisory: {
+      signal: 'increase', action: 'on track', confidence: 'low', tier: 'ok',
+      fiveHour: { current: 10, projected: 0.15, level: 'ok' },
+    },
+    tokenStats: { burnRate: 50 },
+  });
+  const line = strip(raw);
+  assert.match(line, /~ on track — warming up/);
+  // Must NOT render the green ▲ full-color badge in this state.
+  assert.doesNotMatch(raw, /\x1b\[32m▲ on track/);
+});
+
+test('low-confidence but actionable tier (model_swap) keeps full-color badge', () => {
+  const raw = renderAdvisorLine({
+    narrow: false,
+    advisory: {
+      signal: 'reduce', action: 'swap Opus → Sonnet',
+      confidence: 'low', tier: 'model_swap',
+      fiveHour: { current: 70, projected: 0.9, level: 'tight' },
+    },
+    tokenStats: { burnRate: 400 },
+  });
+  const line = strip(raw);
+  assert.match(line, /▼ swap Opus → Sonnet/);
+  assert.doesNotMatch(line, /warming up/);
+});
+
+test('med+ confidence never dims the badge', () => {
+  const line = strip(renderAdvisorLine({
+    narrow: false,
+    advisory: {
+      signal: 'increase', action: 'on track', confidence: 'med', tier: 'ok',
+      fiveHour: { current: 20, projected: 0.3, level: 'ok' },
+    },
+    tokenStats: { burnRate: 100 },
+  }));
+  assert.match(line, /▲ on track/);
+  assert.doesNotMatch(line, /warming up/);
+});
+
 test('peak ⚡ glyph hidden on advisor when peak share is negligible', () => {
   const line = strip(renderAdvisorLine({
     narrow: false,

@@ -15,6 +15,7 @@
  */
 import { dim, green, yellow, red, cyan, RESET } from '../colors.js';
 import { padLabel } from '../format.js';
+import { pickSalienceSegment } from './advisor-salience.js';
 
 const SEP = ` ${dim('│')} `;
 
@@ -59,8 +60,18 @@ export function renderAdvisorLine(ctx) {
   }
 
   const config = SIGNAL_CONFIG[advisory.signal] ?? SIGNAL_CONFIG.nominal;
-  const text = advisory.action ?? config.defaultLabel;
-  const recBadge = renderActionBadge(config, text);
+  // When confidence is low AND the tier is the default "ok" rung (no real
+  // recommendation yet — engine hasn't seen enough data), dim the badge and
+  // prefix with `~` so the reader doesn't mistake a warming-up default for a
+  // measured "on track" call. Any other tier (model_swap, compact, hard_stop)
+  // or confidence ≥ med keeps full color.
+  const warmingUp =
+    advisory.confidence === 'low' && (advisory.tier ?? 'ok') === 'ok';
+  const baseText = advisory.action ?? config.defaultLabel;
+  const text = warmingUp ? `${baseText} — warming up` : baseText;
+  const recBadge = warmingUp
+    ? dim(`~ ${text}`)
+    : renderActionBadge(config, text);
 
   // Pick the most-pressing window (higher of the two projections).
   const primaryWindow = pickPrimaryWindow(advisory);
@@ -73,6 +84,14 @@ export function renderAdvisorLine(ctx) {
   }
 
   parts.push(recBadge);
+
+  // Wide-mode only: one trailing "this is the single most anomalous
+  // metric right now" segment. Silent when no baseline beats the
+  // threshold — the Advisor line must never fabricate salience.
+  if (!narrow) {
+    const salience = pickSalienceSegment(advisory, primaryWindow);
+    if (salience) parts.push(salience);
+  }
 
   // Trailing warn badge — condensed, so it doesn't dominate.
   if (warn) {
