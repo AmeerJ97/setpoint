@@ -65,6 +65,9 @@ main effort, subagent model, rules/hooks/CLAUDE.md counts, compression.
 - Compression: COMP in red (quality degraded), UNCOMP in green.
 - Effort is sanitized: fallback to settings.json if env value is unknown.
 - Counts always in dim: "13r 7h 2md".
+- Trailing `· stale {age}s` (dim) when the analytics daemon hasn't
+  refreshed this session's cache in > 2 × poll interval (30 s). Absent
+  when the daemon is healthy.
 
 ### Line 6: MCPs
 Total loaded + which ones are actively used this session.
@@ -101,7 +104,8 @@ Layout (wide): `Advisor {gauge} {cur}→{proj} │ TTE {hms} │ conf:{low|med|h
 - Dim `── nominal`
 - Yellow `▼ consider reducing — 82% 5hr used`
 - Red `⚠ throttle — will hit 5hr limit in 40min`
-- Red `⚠ ALERT: <anomaly>` — critical anomalies override the normal advisor
+- Red `⚠ <anomaly>` — critical anomalies override the normal advisor
+  (terse: `{metric} {value} — {diagnosis}`, ≤ 48 visible chars, no `ALERT:` prefix)
 - Dim `~ on track — warming up` — low confidence + tier=ok (engine hasn't
   seen enough data yet; badge never rendered at full green until `conf:med`)
 - Trailing salience segment (wide only, one at most, priority order):

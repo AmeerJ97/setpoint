@@ -13,7 +13,7 @@ import { parseTranscript } from '../collectors/transcript.js';
 import { countConfigs } from '../collectors/config-reader.js';
 import { getGitStatus } from '../collectors/git.js';
 import { readGuardStatus } from '../collectors/guard-reader.js';
-import { readCachedTokenStats, getActiveMcpNames } from '../collectors/session-scanner.js';
+import { readCachedTokenStatsMeta, getActiveMcpNames } from '../collectors/session-scanner.js';
 import { readRtkStats } from '../collectors/rtk-reader.js';
 import { findActiveSessions } from '../data/session.js';
 import { readJson } from '../data/jsonl.js';
@@ -56,7 +56,9 @@ async function main() {
 
     // Sync reads (fast, from cache files) — scoped to THIS session.
     const usageData = getUsageFromStdin(stdin);
-    const tokenStats = augmentTokenStats(readCachedTokenStats(sessionId), stdin, transcript.sessionStart, getModelName(stdin));
+    const cachedMeta = readCachedTokenStatsMeta(sessionId);
+    const tokenStats = augmentTokenStats(cachedMeta.data, stdin, transcript.sessionStart, getModelName(stdin), cachedMeta.writtenAt);
+    const daemonStaleSec = computeDaemonStaleSec(cachedMeta.writtenAt);
     const activeMcps = getActiveMcpNames(sessionId);
     const isCompressed = isCompressionEnabled();
     const rtkStats = readRtkStats(sessionId);
@@ -109,7 +111,7 @@ async function main() {
         // Context pressure
         contextPercent: contextPercentForAdvisor,
         // Guard data
-        guardActivationsPerHour: guardStatus?.activationsPerHour ?? 0,
+        guardActivationsPerHour: guardStatus?.activationsLastHour ?? 0,
         // Tool data
         toolCounts,
         toolCallCount: transcript.toolCallCount ?? 0,
@@ -154,6 +156,7 @@ async function main() {
       rtkStats,
       sessionId,
       activeSessionCount,
+      daemonStaleSec,
       narrow: false, // set by renderer
     };
 
@@ -213,7 +216,18 @@ function maybeWriteHistory(sessionId, usageData, tokenStats, advisory, effort, s
  * the existing `t/m` display unit still applies. EWMA-smoothed value
  * also exposed for advisor consumption.
  */
-function augmentTokenStats(cached, stdin, sessionStart, modelName) {
+const DAEMON_STALE_THRESHOLD_SEC = 30; // 2 × POLL_INTERVAL_MS (15 s)
+
+function computeDaemonStaleSec(writtenAt) {
+  if (!writtenAt) return null;
+  const parsed = Date.parse(writtenAt);
+  if (!Number.isFinite(parsed)) return null;
+  const ageSec = Math.round((Date.now() - parsed) / 1000);
+  if (ageSec < DAEMON_STALE_THRESHOLD_SEC) return null;
+  return ageSec;
+}
+
+function augmentTokenStats(cached, stdin, sessionStart, modelName, writtenAt = null) {
   const usage = stdin?.context_window?.current_usage;
   if (!usage) return cached;
 
@@ -240,13 +254,20 @@ function augmentTokenStats(cached, stdin, sessionStart, modelName) {
     : 0;
   const durationMin = base.durationMin > 0 ? base.durationMin : transcriptDurMin;
 
-  const burnRate = costWeightedBurnRate({
+  const freshBurn = costWeightedBurnRate({
     totalInput: freshInput,
     totalOutput: freshOutput,
     totalCacheCreate: freshCacheCreate,
     totalCacheRead: freshCacheRead,
     durationMin,
-  }, modelName) || base.burnRate;
+  }, modelName);
+  const burnRate = freshBurn || base.burnRate;
+  // If we fell back to the cached burn rate AND the cache is older
+  // than 2 × poll interval, mark the value stale so the renderer can
+  // dim it with a `·stale` suffix instead of silently showing an
+  // outdated number.
+  const staleSec = computeDaemonStaleSec(writtenAt);
+  const burnRateStale = !freshBurn && base.burnRate > 0 && staleSec !== null;
 
   const burnRateSmoothed = ewmaBurnRate(base.recentTurnsOutput, durationMin);
 
@@ -258,6 +279,7 @@ function augmentTokenStats(cached, stdin, sessionStart, modelName) {
     totalCacheRead: freshCacheRead,
     durationMin,
     burnRate,
+    burnRateStale,
     burnRateSmoothed,
     burnRateModel: modelName ?? null,
   };

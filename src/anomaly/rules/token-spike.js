@@ -17,7 +17,7 @@ export function checkTokenSpike(turnData) {
   if (outputThisTurn > TOKEN_SPIKE_THRESHOLD) {
     return {
       triggered: true,
-      message: `Token spike: ${outputThisTurn.toLocaleString()} output tokens in single turn (threshold: ${TOKEN_SPIKE_THRESHOLD.toLocaleString()})`,
+      message: `spike ${Math.round(outputThisTurn / 1000)}K tok in one turn`,
       severity: 'warn',
     };
   }

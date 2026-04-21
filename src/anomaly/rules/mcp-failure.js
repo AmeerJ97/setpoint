@@ -19,7 +19,7 @@ export function checkMcpFailures(failureCounts) {
     if (n >= MCP_FAILURE_STREAK_THRESHOLD) {
       alerts.push({
         triggered: true,
-        message: `MCP failure streak: ${name} failed ${n}x consecutively`,
+        message: `mcp ${name} × ${n} fails`,
         severity: 'warn',
       });
     }

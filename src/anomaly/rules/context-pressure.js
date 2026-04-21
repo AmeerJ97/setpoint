@@ -22,7 +22,7 @@ export function checkContextPressure(data) {
   if (pct >= THRESHOLDS.CONTEXT_CRITICAL_PCT) {
     return {
       triggered: true,
-      message: `Context critical: ${Math.round(pct)}% — consider /clear or new session`,
+      message: `ctx ${Math.round(pct)}% — compact soon`,
       severity: 'critical',
       contextPercent: pct,
     };
@@ -32,7 +32,7 @@ export function checkContextPressure(data) {
   if (pct >= THRESHOLDS.CONTEXT_WARN_PCT && compactions === 0) {
     return {
       triggered: true,
-      message: `Context pressure: ${Math.round(pct)}% — may compact soon, quality may degrade`,
+      message: `ctx ${Math.round(pct)}% — pressure`,
       severity: 'warn',
       contextPercent: pct,
     };

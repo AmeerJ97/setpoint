@@ -33,7 +33,7 @@ describe('checkContextPressure', () => {
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'critical');
     assert.ok(result.message.includes('88%'));
-    assert.ok(result.message.includes('/clear'));
+    assert.ok(result.message.includes('compact'));
   });
 
   it('triggers critical regardless of compaction count', () => {

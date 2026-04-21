@@ -57,7 +57,7 @@ function sampleContext(sessionLabel) {
       flagCounts: { brevity: 2, summarize: 1, thinking: 1 },
       topFlag: 'brevity',
       skippedCount: 0,
-      activationsPerHour: 2,
+      activationsLastHour: 2,
     },
     advisory: {
       signal: 'increase',

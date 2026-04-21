@@ -65,5 +65,14 @@ export function renderEnvLine(ctx) {
     parts.push(yellow(`⧉${n} sessions`));
   }
 
+  // Daemon staleness affordance — when the analytics daemon hasn't
+  // refreshed this session's cache in > 2 × poll interval, the token
+  // numbers on the HUD are up to N seconds old. Show the age so the
+  // reader knows reads aren't fresh; absent when daemon is healthy.
+  const staleSec = ctx.daemonStaleSec;
+  if (Number.isFinite(staleSec) && staleSec !== null) {
+    parts.push(dim(`· stale ${staleSec}s`));
+  }
+
   return `${dim(padLabel('Env', ctx.narrow))} ${parts.join(` ${dim('|')} `)}`;
 }

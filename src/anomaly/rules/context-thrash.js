@@ -12,7 +12,7 @@ export function checkContextThrash(compactionCount) {
   if (count > MAX_COMPACTIONS_PER_SESSION) {
     return {
       triggered: true,
-      message: `Context thrashing: ${count} compactions this session`,
+      message: `thrash — ${count}× compacts`,
       severity: 'warn',
     };
   }

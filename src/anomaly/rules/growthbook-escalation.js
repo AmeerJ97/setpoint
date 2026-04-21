@@ -13,14 +13,14 @@ export function checkGrowthBookEscalation(activationsPerHour) {
   if (rate >= GUARD_ACTIVATIONS_CRITICAL) {
     return {
       triggered: true,
-      message: `GrowthBook escalation: ${Math.round(rate)} guard activations/hr (critical)`,
+      message: `gb ${Math.round(rate)}/hr — escalation`,
       severity: 'critical',
     };
   }
   if (rate >= GUARD_ACTIVATIONS_WARN) {
     return {
       triggered: true,
-      message: `GrowthBook escalation: ${Math.round(rate)} guard activations/hr`,
+      message: `gb ${Math.round(rate)}/hr — elevated`,
       severity: 'warn',
     };
   }

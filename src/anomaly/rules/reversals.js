@@ -34,7 +34,7 @@ export function checkReversals(data) {
   if (rate >= REVERSALS_WARN_PER_1K) {
     return {
       triggered: true,
-      message: `Reasoning reversals high: ${rate.toFixed(1)}/1k tool calls. Consider /clear.`,
+      message: `reversals ${rate.toFixed(1)}/1k — thrashing`,
       severity: 'warn',
       reversalsPer1k: rate,
       toolCallCount: calls,

@@ -61,8 +61,14 @@ export function renderTokensLine(ctx) {
     : '';
 
   const cacheLabel = cacheBasis === 'rolling' ? 'cache' : dim('cache*');
-  const cacheBlock = `${cacheLabel}:${cacheBar} ${cacheColor}${cachePercent}%${RESET}` +
-    (ttlSplit ? ` ${dim(ttlSplit)}` : '');
+  // Honest placeholder when the session has literally no cache activity
+  // yet: `cache:--` (dim) instead of `cache:0%`. The latter is a valid
+  // reading for a degraded session; conflating the two hides regressions.
+  const hasCacheActivity = (cacheCreate + cacheRead) > 0;
+  const cacheBlock = hasCacheActivity
+    ? `${cacheLabel}:${cacheBar} ${cacheColor}${cachePercent}%${RESET}` +
+      (ttlSplit ? ` ${dim(ttlSplit)}` : '')
+    : dim('cache:--');
 
   const primary = [
     cyan(`in:${inTok}`),
@@ -71,8 +77,11 @@ export function renderTokensLine(ctx) {
     cacheBlock,
   ];
 
+  const burnLabel = stats.burnRateStale
+    ? `${burnColor}burn:${Math.round(burnRate)}t/m${RESET}${dim('·stale')}`
+    : `${burnColor}burn:${Math.round(burnRate)}t/m${RESET}`;
   const secondary = [
-    `${burnColor}burn:${Math.round(burnRate)}t/m${RESET}`,
+    burnLabel,
     dim(`${apiCalls}calls`),
   ];
 

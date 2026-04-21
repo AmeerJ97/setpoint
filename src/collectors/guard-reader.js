@@ -14,7 +14,6 @@ const execFileAsync = promisify(execFile);
  * @property {boolean} running
  * @property {number} activationsToday
  * @property {number} activationsLastHour
- * @property {number} activationsPerHour
  * @property {Date|null} lastActivation
  * @property {string|null} lastFlag
  * @property {Record<string, number>} flagCounts - per-flag activation counts today
@@ -29,13 +28,13 @@ const execFileAsync = promisify(execFile);
  */
 export async function readGuardStatus() {
   const running = await isGuardRunning();
-  const { activationsToday, activationsLastHour, activationsPerHour, lastActivation, lastFlag, flagCounts, topFlag } = parseGuardLog();
+  const { activationsToday, activationsLastHour, lastActivation, lastFlag, flagCounts, topFlag } = parseGuardLog();
   const skippedCategories = listSkippedCategories();
   const skippedCount = skippedCategories.length;
   const skipReasons = readSkipReasons(skippedCategories);
 
   return {
-    running, activationsToday, activationsLastHour, activationsPerHour,
+    running, activationsToday, activationsLastHour,
     lastActivation, lastFlag, flagCounts, topFlag, skippedCount,
     skippedCategories, skipReasons,
   };
@@ -112,7 +111,6 @@ function parseGuardLog() {
   const result = {
     activationsToday: 0,
     activationsLastHour: 0,
-    activationsPerHour: 0,
     lastActivation: null,
     lastFlag: null,
     flagCounts: {},
@@ -166,7 +164,6 @@ function parseGuardLog() {
     }
   } catch { /* ignore */ }
 
-  result.activationsPerHour = result.activationsLastHour;
   return result;
 }
 

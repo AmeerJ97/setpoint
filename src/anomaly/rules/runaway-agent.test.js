@@ -17,7 +17,7 @@ describe('checkRunawayAgent', () => {
     const result = checkRunawayAgent(60, 60);
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'warn');
-    assert.ok(result.message.includes('60 spawns'));
+    assert.ok(result.message.includes('60 agent spawns'));
     assert.ok(result.message.includes('60/hr'));
   });
 

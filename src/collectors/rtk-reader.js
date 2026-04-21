@@ -4,6 +4,7 @@
  * back to the legacy global file (for installs where the daemon
  * hasn't yet written a per-session snapshot).
  */
+import { statSync } from 'node:fs';
 import { readJson } from '../data/jsonl.js';
 import { RTK_STATS_FILE, rtkStatsFileFor } from '../data/paths.js';
 
@@ -26,9 +27,19 @@ import { RTK_STATS_FILE, rtkStatsFileFor } from '../data/paths.js';
  */
 export function readRtkStats(sessionId = null) {
   let data = null;
-  if (sessionId) data = readJson(rtkStatsFileFor(sessionId));
-  if (!data) data = readJson(RTK_STATS_FILE);
+  let sourcePath = null;
+  if (sessionId) {
+    sourcePath = rtkStatsFileFor(sessionId);
+    data = readJson(sourcePath);
+  }
+  if (!data) {
+    sourcePath = RTK_STATS_FILE;
+    data = readJson(sourcePath);
+  }
   if (!data?.global) return null;
+
+  let mtimeMs = null;
+  try { mtimeMs = statSync(sourcePath).mtimeMs; } catch { /* ignore */ }
 
   const g = data.global;
   const p = data.project;
@@ -42,5 +53,6 @@ export function readRtkStats(sessionId = null) {
     projectSavingsPct: p?.avg_savings_pct ?? 0,
     projectCommands: p?.total_commands ?? 0,
     fetchedAt: data.fetchedAt ?? null,
+    mtimeMs,
   };
 }

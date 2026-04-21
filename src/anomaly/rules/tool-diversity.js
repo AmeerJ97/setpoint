@@ -38,7 +38,7 @@ export function checkToolDiversity(data) {
 
     return {
       triggered: true,
-      message: `Low tool diversity: only ${uniqueTools} tool types used (${toolList})`,
+      message: `${uniqueTools} tool types only`,
       severity: 'warn',
       uniqueTools,
       totalCalls,

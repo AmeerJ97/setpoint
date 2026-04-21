@@ -115,6 +115,27 @@ export function readCachedTokenStats(sessionId = null) {
 }
 
 /**
+ * Read cached token stats plus the daemon's `writtenAt` timestamp so
+ * callers can show a staleness indicator if the daemon has wedged.
+ * Returns `{data, writtenAt}` where writtenAt is ISO-8601 or null.
+ * @param {string|null} [sessionId]
+ * @returns {{data: TokenStats|null, writtenAt: string|null}}
+ */
+export function readCachedTokenStatsMeta(sessionId = null) {
+  if (!sessionId) return { data: null, writtenAt: null };
+  const record = readJson(tokenStatsFileFor(sessionId));
+  if (record) {
+    return { data: normalizeRecord(record), writtenAt: record.writtenAt ?? null };
+  }
+  const legacy = readJson(TOKEN_STATS_LATEST);
+  const row = legacy?.sessions?.find(s => s.sid === sessionId);
+  if (row) {
+    return { data: normalizeRecord(row), writtenAt: legacy.writtenAt ?? null };
+  }
+  return { data: null, writtenAt: null };
+}
+
+/**
  * MCP server names actually used by this session (or the legacy
  * aggregate if no session id), sorted by invocation count descending.
  * @param {string|null} [sessionId]

@@ -10,7 +10,7 @@ test('critical anomaly overrides everything', () => {
     anomalies: [{ severity: 'critical', message: 'rogue agent' }],
     advisory: { signal: 'increase' },
   }));
-  assert.match(line, /ALERT: rogue agent/);
+  assert.match(line, /⚠ rogue agent/);
 });
 
 test('warn anomaly rides as a trailing badge, does NOT take over', () => {
@@ -120,7 +120,8 @@ test('confidence renders as an explicit conf: field', () => {
     },
     tokenStats: { burnRate: 0 },
   }));
-  assert.match(missing, /conf:--/);
+  // Confidence is always supplied by the engine; missing → treated as low.
+  assert.match(missing, /conf:low/);
 });
 
 test('TTE renders in red on 5h window when under 2 hours remain', () => {

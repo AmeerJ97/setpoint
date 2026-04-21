@@ -16,13 +16,13 @@ describe('checkContextThrash', () => {
     const result = checkContextThrash(6);
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'warn');
-    assert.ok(result.message.includes('6 compactions'));
+    assert.ok(result.message.includes('6× compacts'));
   });
 
   it('handles large compaction counts', () => {
     const result = checkContextThrash(20);
     assert.equal(result.triggered, true);
-    assert.ok(result.message.includes('20 compactions'));
+    assert.ok(result.message.includes('20× compacts'));
   });
 
   // Input validation tests

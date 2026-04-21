@@ -177,7 +177,7 @@ Optional: desktop notification via notify-send for critical alerts.
 
 ### Sources (read-only)
 - stdin JSON: piped by Claude Code to HUD process (real-time)
-- Session JONLs: ~/.claude/projects/{slug}/{session}.jsonl (polled 60s)
+- Session JONLs: ~/.claude/projects/{slug}/{session}.jsonl (polled 15s)
 - ~/.claude.json: config + cached GrowthBook features (watched by guard)
 - /tmp/claude-quality-guard.log: guard activity timestamps
 
@@ -193,7 +193,7 @@ Optional: desktop notification via notify-send for critical alerts.
 ```
 Claude Code ──stdin──→ Display engine (renders 8 lines)
                           ↑ reads
-                    Analytics engine ←── Session JONLs (polled 60s)
+                    Analytics engine ←── Session JONLs (polled 15s)
                           ↑ reads
                     usage-history.jsonl ←── Analytics engine (writes every 5m)
                           ↑ reads

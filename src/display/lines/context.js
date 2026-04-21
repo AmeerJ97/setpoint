@@ -61,13 +61,21 @@ export function renderContextLine(ctx) {
   }
 
   // RTK savings — belongs on Context (cache-related), not Tokens (burn).
+  // When the RTK state file is stale (>10min), dim the segment so the
+  // reader knows the number may not reflect current activity.
   let rtkNote = '';
   const rtk = ctx.rtkStats;
   if (rtk && rtk.totalSaved > 0 && !narrow) {
     const pct = Math.round(rtk.avgSavingsPct);
     const savedStr = formatTokens(rtk.totalSaved);
-    const rtkColor = pct >= 80 ? green : pct >= 50 ? yellow : red;
-    rtkNote = rtkColor(`rtk:${savedStr}↓${pct}%`);
+    const ageMs = rtk.mtimeMs ? Date.now() - rtk.mtimeMs : 0;
+    const stale = Number.isFinite(ageMs) && ageMs > 10 * 60_000;
+    if (stale) {
+      rtkNote = dim(`rtk:${savedStr}↓${pct}%`);
+    } else {
+      const rtkColor = pct >= 80 ? green : pct >= 50 ? yellow : red;
+      rtkNote = rtkColor(`rtk:${savedStr}↓${pct}%`);
+    }
   }
 
   const primary = `${bar} ${pctDisplay}  ${tokenDisplay}`;

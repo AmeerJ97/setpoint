@@ -18,7 +18,7 @@ describe('checkGrowthBookEscalation', () => {
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'warn');
     assert.ok(result.message.includes('300'));
-    assert.ok(result.message.includes('guard activations/hr'));
+    assert.ok(result.message.includes('/hr'));
   });
 
   it('triggers warn between 300 and 500', () => {
@@ -31,7 +31,7 @@ describe('checkGrowthBookEscalation', () => {
     const result = checkGrowthBookEscalation(500);
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'critical');
-    assert.ok(result.message.includes('critical'));
+    assert.ok(result.message.includes('escalation'));
   });
 
   it('triggers critical above 500/hr', () => {

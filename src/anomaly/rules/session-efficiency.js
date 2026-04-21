@@ -44,7 +44,7 @@ export function checkSessionEfficiency(data) {
   if (efficiency < THRESHOLDS.MIN_EFFICIENCY_RATIO && totalConsumed > 50000) {
     return {
       triggered: true,
-      message: `Low efficiency: ${(efficiency * 100).toFixed(1)}% output/input ratio — may indicate wasteful exploration`,
+      message: `efficiency ${(efficiency * 100).toFixed(1)}% — wasteful`,
       severity: 'warn',
       efficiency,
       inputTokens: input,

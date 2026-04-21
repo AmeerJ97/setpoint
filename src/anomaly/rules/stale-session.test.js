@@ -18,8 +18,8 @@ describe('checkStaleSession', () => {
     const result = checkStaleSession(300, 0);
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'warn');
-    assert.ok(result.message.includes('5.0hrs'));
-    assert.ok(result.message.includes('without compaction'));
+    assert.ok(result.message.includes('5.0h'));
+    assert.ok(result.message.includes('no compact'));
   });
 
   it('returns null for long sessions with compaction', () => {
@@ -31,7 +31,7 @@ describe('checkStaleSession', () => {
   it('handles fractional hours', () => {
     const result = checkStaleSession(270, 0); // 4.5 hours
     assert.equal(result.triggered, true);
-    assert.ok(result.message.includes('4.5hrs'));
+    assert.ok(result.message.includes('4.5h'));
   });
 
   // Input validation tests

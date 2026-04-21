@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Analytics daemon — long-running background service.
- * Polls active sessions every 60s, writes token stats.
+ * Polls active sessions every 15s, writes token stats.
  * Writes usage history every 5 minutes.
  * Runs anomaly detection checks.
  */
@@ -17,7 +17,7 @@ import { costWeightedBurnRate } from './cost.js';
 
 const execFileAsync = promisify(execFile);
 
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 15_000;
 const HISTORY_INTERVAL_MS = 300_000;
 
 let lastHistoryWrite = 0;

@@ -18,13 +18,13 @@ describe('checkTokenSpike', () => {
     const result = checkTokenSpike({ outputTokens: 50001 });
     assert.equal(result.triggered, true);
     assert.equal(result.severity, 'warn');
-    assert.ok(result.message.includes('50,001'));
+    assert.ok(result.message.includes('50K'));
   });
 
   it('handles large token counts', () => {
     const result = checkTokenSpike({ outputTokens: 150000 });
     assert.equal(result.triggered, true);
-    assert.ok(result.message.includes('150,000'));
+    assert.ok(result.message.includes('150K'));
   });
 
   it('handles missing outputTokens field', () => {

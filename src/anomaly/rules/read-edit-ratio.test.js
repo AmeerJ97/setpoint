@@ -119,7 +119,7 @@ describe('checkReadEditRatio', () => {
       toolCounts: { Read: 6, Edit: 4 },
     });
     assert.ok(result.message.includes('1.5'));
-    assert.ok(result.message.includes('6R'));
-    assert.ok(result.message.includes('4E'));
+    assert.ok(result.message.includes('6r'));
+    assert.ok(result.message.includes('4e'));
   });
 });

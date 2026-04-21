@@ -26,7 +26,7 @@ describe('checkMcpFailures', () => {
     assert.equal(result[0].triggered, true);
     assert.equal(result[0].severity, 'warn');
     assert.ok(result[0].message.includes('brave'));
-    assert.ok(result[0].message.includes('3x'));
+    assert.ok(result[0].message.includes('× 3'));
   });
 
   it('returns multiple alerts for multiple failing MCPs', () => {
@@ -46,7 +46,7 @@ describe('checkMcpFailures', () => {
   it('includes correct failure count in message', () => {
     const counts = new Map([['test-mcp', 7]]);
     const result = checkMcpFailures(counts);
-    assert.ok(result[0].message.includes('7x'));
+    assert.ok(result[0].message.includes('× 7'));
   });
 
   // Input validation tests

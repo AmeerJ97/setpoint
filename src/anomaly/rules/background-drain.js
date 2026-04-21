@@ -35,14 +35,14 @@ export function checkBackgroundDrain() {
     if (desktopRunning && prefs.coworkScheduledTasksEnabled === true) {
       alerts.push({
         triggered: true,
-        message: 'Cowork scheduled tasks on — Desktop burns quota in background',
+        message: 'cowork on — bg quota drain',
         severity: 'warn',
       });
     }
     if (desktopRunning && prefs.ccdScheduledTasksEnabled === true) {
       alerts.push({
         triggered: true,
-        message: 'CCD scheduled tasks on — Desktop burns quota in background',
+        message: 'ccd on — bg quota drain',
         severity: 'warn',
       });
     }
@@ -59,7 +59,7 @@ export function checkBackgroundDrain() {
     if (count > 0) {
       alerts.push({
         triggered: true,
-        message: `${count} chrome-native-host process(es) running — may consume quota`,
+        message: `${count} chrome-host — bg drain`,
         severity: 'warn',
       });
     }
@@ -77,7 +77,7 @@ export function checkBackgroundDrain() {
       if (recent.length > 0) {
         alerts.push({
           triggered: true,
-          message: `${recent.length} Desktop agent session(s) active in last hour`,
+          message: `${recent.length} desktop agents — bg drain`,
           severity: 'warn',
         });
       }

@@ -42,7 +42,7 @@ export function checkReadEditRatio(data) {
   if (ratio < RE_RATIO_CRITICAL && isOpus(data.modelName)) {
     return {
       triggered: true,
-      message: `Read:Edit ratio critically low: ${ratio.toFixed(1)} (${reads}R/${edits}E). Model is editing without reading.`,
+      message: `R:E ${ratio.toFixed(1)} (${reads}r/${edits}e) — edit-first`,
       severity: 'critical',
       ratio,
       reads,
@@ -53,7 +53,7 @@ export function checkReadEditRatio(data) {
   if (ratio < RE_RATIO_WARN) {
     return {
       triggered: true,
-      message: `Read:Edit ratio low: ${ratio.toFixed(1)} (${reads}R/${edits}E). May indicate shallow reasoning.`,
+      message: `R:E ${ratio.toFixed(1)} (${reads}r/${edits}e) — shallow`,
       severity: 'warn',
       ratio,
       reads,

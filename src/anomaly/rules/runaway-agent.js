@@ -19,7 +19,7 @@ export function checkRunawayAgent(agentSpawns, sessionDurationMin) {
   if (rate > MAX_SPAWNS_PER_HOUR) {
     return {
       triggered: true,
-      message: `Runaway agent: ${spawns} spawns (${Math.round(rate)}/hr)`,
+      message: `${spawns} agent spawns (${Math.round(rate)}/hr)`,
       severity: 'warn',
     };
   }

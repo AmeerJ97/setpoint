@@ -15,6 +15,7 @@
  */
 import { dim, green, yellow, red, cyan, RESET } from '../colors.js';
 import { padLabel } from '../format.js';
+import { truncateToWidth } from '../text.js';
 import { pickSalienceSegment } from './advisor-salience.js';
 
 const SEP = ` ${dim('│')} `;
@@ -46,7 +47,7 @@ export function renderAdvisorLine(ctx) {
   const anomalies = ctx.anomalies ?? [];
   const critical = anomalies.find(a => a.severity === 'critical');
   if (critical) {
-    return `${dim(label)} ${red(`⚠ ALERT: ${critical.message}`)}`;
+    return `${dim(label)} ${red(`⚠ ${critical.message}`)}`;
   }
   const warn = anomalies.find(a => a.severity === 'warn' || !a.severity);
 
@@ -97,7 +98,8 @@ export function renderAdvisorLine(ctx) {
   if (warn) {
     const extra = anomalies.filter(a => a.severity === 'warn' || !a.severity).length - 1;
     const suffix = extra > 0 ? dim(` +${extra}`) : '';
-    parts.push(`${yellow(`△ ${warn.message}`)}${suffix}`);
+    const badge = `${yellow(`△ ${warn.message}`)}${suffix}`;
+    parts.push(truncateToWidth(badge, 40));
   }
 
   return `${dim(label)} ${parts.join(SEP)}`;
@@ -120,8 +122,7 @@ function renderActionBadge(config, text) {
 function renderConfidence(conf) {
   if (conf === 'high') return `${dim('conf:')}${green('high')}`;
   if (conf === 'med')  return `${dim('conf:')}${yellow('med')}`;
-  if (conf === 'low')  return `${dim('conf:')}${dim('low')}`;
-  return dim('conf:--');
+  return `${dim('conf:')}${dim('low')}`;
 }
 
 /**

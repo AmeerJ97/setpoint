@@ -35,8 +35,7 @@ describe('checkToolDiversity', () => {
       toolCounts: { Edit: 8, Write: 5 }, // 2 tools, 13 calls
     });
     assert.equal(result.triggered, true);
-    assert.ok(result.message.includes('Edit:8'));
-    assert.ok(result.message.includes('Write:5'));
+    assert.ok(result.message.includes('2 tool types'));
   });
 });
 

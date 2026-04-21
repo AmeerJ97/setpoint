@@ -16,7 +16,7 @@ export function checkStaleSession(sessionDurationMin, compactionCount) {
   if (hours > MAX_HOURS_WITHOUT_COMPACTION && compactions === 0) {
     return {
       triggered: true,
-      message: `Stale session: ${hours.toFixed(1)}hrs without compaction — context quality may be degraded`,
+      message: `stale ${hours.toFixed(1)}h — no compact`,
       severity: 'warn',
     };
   }
