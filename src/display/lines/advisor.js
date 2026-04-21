@@ -14,9 +14,18 @@
  * Anomaly alerts still override (critical first, warn next).
  */
 import { dim, green, yellow, red, cyan, RESET } from '../colors.js';
-import { padLabel } from '../format.js';
+import { padLabel, padVisualEnd } from '../format.js';
 import { truncateToWidth } from '../text.js';
 import { pickSalienceSegment } from './advisor-salience.js';
+
+// Fixed column widths for two-row alignment. Chosen so the widest
+// realistic content in each column still fits without truncation:
+//   gauge  = "5h ▕" + 16 rail cells + "▏ 100→100" ≈ 28 visual cols
+//   tte    = "TTE 9d23h" ≈ 9 visual cols
+//   conf   = "conf:high" = 9 visual cols
+const COL_GAUGE = 28;
+const COL_TTE   = 9;
+const COL_CONF  = 9;
 
 const SEP = ` ${dim('│')} `;
 
@@ -74,35 +83,57 @@ export function renderAdvisorLine(ctx) {
     ? dim(`~ ${text}`)
     : renderActionBadge(config, text);
 
-  // Pick the most-pressing window (higher of the two projections).
+  // Narrow mode — compact single row, same as before.
+  if (narrow) {
+    const parts = [recBadge];
+    if (warn) {
+      const extra = anomalies.filter(a => a.severity === 'warn' || !a.severity).length - 1;
+      const suffix = extra > 0 ? dim(` +${extra}`) : '';
+      parts.push(truncateToWidth(`${yellow(`△ ${warn.message}`)}${suffix}`, 40));
+    }
+    return `${dim(label)} ${parts.join(SEP)}`;
+  }
+
+  // Wide mode — two rows, columns aligned between them:
+  //   Advisor 5h ▕██▓─────▏ 62→78 │ TTE 6h    │ conf:med  │ ▼ /compact │ ⚡ burn 3× P50
+  //           7d ▕█████▓──▏ 38→52 │ TTE --    │ conf:high │ ▲ on track │ △ reversals 27/1k
+  // The action badge rides with the primary (more-pressing) window on
+  // row 1; row 2 shows the other window + trailing salience / warn
+  // badges so the advisor content stays at 2 rows even when heavily
+  // decorated.
   const primaryWindow = pickPrimaryWindow(advisory);
+  const secondaryWindow = pickSecondaryWindow(advisory, primaryWindow);
 
-  const parts = [];
-  if (!narrow) {
-    parts.push(renderCombinedGauge(primaryWindow));
-    parts.push(renderTte(primaryWindow));
-    parts.push(renderConfidence(advisory.confidence));
-  }
+  const row1Parts = [
+    padVisualEnd(renderCombinedGauge(primaryWindow), COL_GAUGE),
+    padVisualEnd(renderTte(primaryWindow), COL_TTE),
+    padVisualEnd(renderConfidence(advisory.confidence), COL_CONF),
+    recBadge,
+  ];
+  const salience = pickSalienceSegment(advisory, primaryWindow);
+  if (salience) row1Parts.push(salience);
 
-  parts.push(recBadge);
+  const row2Parts = [
+    padVisualEnd(renderCombinedGauge(secondaryWindow), COL_GAUGE),
+    padVisualEnd(renderTte(secondaryWindow), COL_TTE),
+    padVisualEnd(renderConfidence(advisory.confidence), COL_CONF),
+  ];
 
-  // Wide-mode only: one trailing "this is the single most anomalous
-  // metric right now" segment. Silent when no baseline beats the
-  // threshold — the Advisor line must never fabricate salience.
-  if (!narrow) {
-    const salience = pickSalienceSegment(advisory, primaryWindow);
-    if (salience) parts.push(salience);
-  }
-
-  // Trailing warn badge — condensed, so it doesn't dominate.
+  // Warn anomaly lives on row 2 so it never competes with the primary
+  // recommendation on row 1.
   if (warn) {
     const extra = anomalies.filter(a => a.severity === 'warn' || !a.severity).length - 1;
     const suffix = extra > 0 ? dim(` +${extra}`) : '';
     const badge = `${yellow(`△ ${warn.message}`)}${suffix}`;
-    parts.push(truncateToWidth(badge, 40));
+    row2Parts.push(truncateToWidth(badge, 40));
   }
 
-  return `${dim(label)} ${parts.join(SEP)}`;
+  const row1 = `${dim(label)} ${row1Parts.join(SEP)}`;
+  // Row 2: pad the label column with spaces so the gauge column of row
+  // 2 lines up with row 1's gauge column.
+  const labelPad = ' '.repeat(label.length);
+  const row2 = `${labelPad} ${row2Parts.join(SEP)}`;
+  return `${row1}\n${row2}`;
 }
 
 /**
@@ -171,6 +202,22 @@ function formatDuration(sec) {
  *
  * Prefers 5h if tied.
  */
+/**
+ * Return the window that should live on row 2 — always the one not
+ * chosen as primary. Falls back to a placeholder so row 2 renders a
+ * dimmed rail rather than vanishing, which would visually collapse
+ * the advisor back to 1 row and mask loading state.
+ */
+function pickSecondaryWindow(advisory, primary) {
+  const fh = advisory?.fiveHour;
+  const sd = advisory?.sevenDay;
+  const primaryLabel = primary?.label;
+  if (primaryLabel === '5h' && sd) return { ...sd, label: '7d' };
+  if (primaryLabel === '7d' && fh) return { ...fh, label: '5h' };
+  const otherLabel = primaryLabel === '5h' ? '7d' : '5h';
+  return { label: otherLabel, current: 0, projected: 0, level: 'ok', placeholder: true };
+}
+
 function pickPrimaryWindow(advisory) {
   const fh = advisory?.fiveHour;
   const sd = advisory?.sevenDay;

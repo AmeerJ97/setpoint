@@ -1,6 +1,7 @@
 /**
  * Shared formatting utilities for HUD lines.
  */
+import { visualLength } from './text.js';
 
 /**
  * Pad a label to a consistent width for vertical column alignment.
@@ -12,6 +13,20 @@
  */
 export function padLabel(label, narrow = false) {
   return narrow ? label.padEnd(3) : label.padEnd(7);
+}
+
+/**
+ * Pad an already-colored string to a fixed visual width by appending
+ * spaces. Needed for column alignment because the stock `padEnd`
+ * counts ANSI escape bytes and over-pads colored strings.
+ * @param {string} str
+ * @param {number} width
+ * @returns {string}
+ */
+export function padVisualEnd(str, width) {
+  const w = visualLength(str);
+  if (w >= width) return str;
+  return str + ' '.repeat(width - w);
 }
 
 /**
