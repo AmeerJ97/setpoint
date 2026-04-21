@@ -1,5 +1,5 @@
 /**
- * Line 1: Model — [Opus 4.6 medium] claude-hud git:(main*) │ ⏱ 23m
+ * Line 1: Model — [Opus 4.7 medium] claude-hud git:(main*) │ ⏱ 23m
  */
 import { getModelName, getProviderLabel } from '../../data/stdin.js';
 import { cyan, yellow, magenta, dim, red, green, getEffortColor, RESET } from '../colors.js';

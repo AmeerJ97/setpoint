@@ -15,7 +15,7 @@ The visible terminal HUD. 8+ always-visible vertically-stacked lines.
 
 **Lines:**
 ```
- Model    [Opus 4.6] project-host git:(main*) ⏱ 23m
+ Model    [Opus 4.7] project-host git:(main*) ⏱ 23m
  Context  ████████░░░░░ 48% (42K/200K) compact:52%
  Usage    5h:██████░░░░ 62% 2h15m | 7d:████░░░░░░ 38%
  Tokens   in:42K out:9.5K cache:69% burn:211t/m 18calls
