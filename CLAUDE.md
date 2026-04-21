@@ -13,17 +13,24 @@ The visible terminal HUD. 8+ always-visible vertically-stacked lines.
 - **Narrow terminal**: Abbreviate labels at <100 chars width.
 - See `docs/HUD-SPEC.md` for exact line-by-line layout.
 
-**Lines:**
+**Lines** (Context / Tokens / Guard / Advisor share a 32-col primary
+column so the first `│` separator stacks vertically; Advisor is 2 rows
+in wide mode — 5h on row 1, 7d on row 2 — with fixed TTE/conf widths
+so columns line up between rows):
 ```
- Model    [Opus 4.7] project-host git:(main*) ⏱ 23m
- Context  ████████░░░░░ 48% (42K/200K) compact:52%
- Usage    5h:██████░░░░ 62% 2h15m | 7d:████░░░░░░ 38%
- Tokens   in:42K out:9.5K cache:69% burn:211t/m 18calls
- MCPs     12 loaded | 3 active: brave,perplexity,sentry
- Env      effort:high | 13r 7h 2md | UNCOMP
- Guard    ✓ active | 4 saves today | last: brevity→fixed 2m ago
- Advisor  ▲ safe — 38% weekly remaining, increase effort ok
+ Model    [Opus 4.7 medium] project-host git:(main*) ⏱ 23m
+ Context  ████████░░░░░░ 48% (72K/200K)    │ in:42K cache:30K  ⊕buf:52%
+ Usage    5h:██████░░░░ 62% 2h15m │ 7d:████░░░░░░ 38%
+ Tokens   in:42K out:9.5K cache:69%        │ burn:211t/m 18calls ~$0.91
+ Env      main:medium · sub:sonnet │ 13r 7h 2md │ UNCOMP · ⧉2 sessions
+ MCPs     12 loaded │ brave,perplexity,sentry active
+ Guard    ✓17/17                           │ ↻4 today (last:brevity 2m)
+ Advisor  5h ▕██▓─────────────▏ 62→78      │ TTE 6h    │ conf:med  │ ▼ /compact
+          7d ▕█████▓──────────▏ 38→52      │ TTE 4d12h │ conf:high │ ▲ on track
 ```
+Every line uses the dim box-drawing `│` as its heavy separator; the
+soft `·` joins items inside a semantic group (main+sub models, UNCOMP
++ session counter).
 
 **Additional display features:**
 - Compression indicator: shows `COMP` (red) when tengu_summarize_tool_results=true, `UNCOMP` (green) when false

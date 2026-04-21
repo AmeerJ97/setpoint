@@ -12,21 +12,32 @@
 ## Layout (Vertical Stack, 8 Lines, 80-char minimum)
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ Model   [Opus 4.7 high] project-host git:(main*) ⏱ 23m           │
-│ Context ████████░░░░░░ 48% (72K/200K)   in:42K cache:30K          │
-│ Usage   5h:████████░░ 62% 2h15m | 7d:████░░░░░░ 38%               │
-│ Tokens  in:42K out:9.5K cache:69%  burn:211t/m  18calls           │
-│ Env     main:high | sub:sonnet | 13r 7h 2md | UNCOMP              │
-│ MCPs    12 loaded │ brave,perplexity,sentry active                │
-│ Guard   ✓ 4 saves │ brevity→fixed 2m │ R:E 4.2 (28r/7e) healthy   │
-│ Advisor ▲ safe — 38% weekly remaining                             │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ Model   [Opus 4.7 high] project-host git:(main*) ⏱ 23m               │
+│ Context ████████░░░░░░ 48% (72K/200K)    │ in:42K cache:30K  ⊕buf:52%│
+│ Usage   5h:████████░░ 62% 2h15m │ 7d:████░░░░░░ 38%                  │
+│ Tokens  in:42K out:9.5K cache:69%        │ burn:211t/m 18calls ~$0.91│
+│ Env     main:high · sub:sonnet │ 13r 7h 2md │ UNCOMP · ⧉2 sessions   │
+│ MCPs    12 loaded │ brave,perplexity,sentry active                   │
+│ Guard   ✓17/17                           │ ↻4 today (last:brevity 2m)│
+│ Advisor 5h ▕██▓─────────────▏ 62→78      │ TTE 6h    │ conf:med  │ ▼ │
+│         7d ▕█████▓──────────▏ 38→52      │ TTE 4d12h │ conf:high │ ▲ │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 Line order is fixed. Render order defined in `src/display/renderer.js`
 (`LINE_RENDERERS` array). The quality signal (Read:Edit ratio) is merged
 into the Guard line — it is not a standalone row.
+
+## Visual Grid
+
+Context, Tokens, Guard, and the Advisor rows share a `PRIMARY_COL_WIDTH`
+of 32 visual columns, so the first `│` separator stacks vertically
+across those lines and the eye tracks a single axis instead of drifting
+with per-line content width. Every line uses the dim box-drawing `│`
+as its heavy separator; within a semantic group (main+sub on Env,
+UNCOMP+sessions on Env) items join with the soft `·` so grouped
+fields read as related without adding visual weight.
 
 ## Line-by-Line Spec
 
@@ -97,9 +108,21 @@ for Opus models, based on findings from
 [anthropics/claude-code#42796](https://github.com/anthropics/claude-code/issues/42796):
 good sessions run 6.6+ reads per edit; degraded sessions run ~2.0.
 
-### Line 8: Advisor
-Single recommendation synthesised from rate projections and anomaly state.
-Layout (wide): `Advisor {gauge} {cur}→{proj} │ TTE {hms} │ conf:{low|med|high} │ {badge} [│ {salience}] [│ △ warn]`.
+### Line 8: Advisor (2 rows, wide mode)
+Recommendation synthesised from both rate-window projections and anomaly
+state. Wide mode renders as **two aligned rows** — 5h on row 1, 7d on
+row 2 — with the gauge / TTE / conf columns padded to fixed visual
+widths (32 / 9 / 9) so the `│` separators stack vertically:
+
+```
+Advisor 5h ▕██▓─────────────▏ 62→78  │ TTE 6h    │ conf:med  │ ▼ /compact │ ⚡ burn 3× P50
+        7d ▕█████▓──────────▏ 38→52  │ TTE 4d12h │ conf:high │ ▲ on track │ △ reversals 27/1k
+```
+
+- Row 1 carries the primary (more-pressing) window + action badge + salience segment.
+- Row 2 carries the other window + trailing warn badge.
+- Narrow mode collapses to a single row (badge + warn only).
+- Critical anomalies take over the whole line (single row, red).
 - Green `▲ safe` — increase effort or use Opus
 - Dim `── nominal`
 - Yellow `▼ consider reducing — 82% 5hr used`
