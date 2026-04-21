@@ -20,7 +20,7 @@ export function renderUsageLine(ctx) {
   const label = padLabel(narrow ? 'Use' : 'Usage', narrow);
 
   if (!usage) {
-    return `${dim(label)} ${dim('5h:--%')} ${dim('|')} ${dim('7d:--%')}`;
+    return `${dim(label)} ${dim('5h:--%')} ${dim('│')} ${dim('7d:--%')}`;
   }
 
   // Hard-limit banner takes over the line when either window has

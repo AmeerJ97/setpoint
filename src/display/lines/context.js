@@ -10,7 +10,14 @@
 import { getContextPercent, getBufferedPercent, getTotalTokens } from '../../data/stdin.js';
 import { octantBar, getContextColor, RESET, dim, cyan, green, yellow, red } from '../colors.js';
 import { getAdaptiveBarWidth } from '../terminal.js';
-import { formatTokens, padLabel } from '../format.js';
+import { formatTokens, padLabel, padVisualEnd } from '../format.js';
+
+// Shared grid anchor: the first `│` separator on the primary
+// content lines (Context, Tokens, Guard, Advisor) stacks at the
+// same visual column so the eye tracks down a single axis instead
+// of drifting. 32 cols accommodates the longest natural primary
+// segment (Tokens in/out/cache) without truncation.
+const PRIMARY_COL_WIDTH = 32;
 
 const SEP = ` ${dim('│')} `;
 
@@ -78,7 +85,7 @@ export function renderContextLine(ctx) {
     }
   }
 
-  const primary = `${bar} ${pctDisplay}  ${tokenDisplay}`;
+  const primary = padVisualEnd(`${bar} ${pctDisplay}  ${tokenDisplay}`, PRIMARY_COL_WIDTH);
   const secondaryParts = [];
   if (breakdown) secondaryParts.push(breakdown.trim());
   if (bufferedNote) secondaryParts.push(bufferedNote);

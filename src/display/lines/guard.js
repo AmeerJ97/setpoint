@@ -13,7 +13,9 @@
  *   - ribbon encodes revert frequency via shade — eye-scannable heatmap.
  */
 import { dim, green, yellow, red, cyan } from '../colors.js';
-import { padLabel } from '../format.js';
+import { padLabel, padVisualEnd } from '../format.js';
+
+const PRIMARY_COL_WIDTH = 32;
 import { loadDefaults } from '../../data/defaults.js';
 import {
   RE_RATIO_HEALTHY,
@@ -105,20 +107,18 @@ export function renderGuardLine(ctx) {
   const held = Math.max(0, total - skipped);
   const allHeld = skipped === 0;
 
-  const parts = [];
-
-  // Primary inventory — counts first. "held" text dropped; the ✓/◐ glyph
-  // already carries the meaning and saves characters for the ribbon.
+  // Primary inventory — counts + skipped, grouped into a single padded
+  // column so the first `│` aligns with Context / Tokens / Advisor.
+  // "held" text dropped; the ✓/◐ glyph already carries the meaning.
   const glyph = allHeld ? green('✓') : yellow('◐');
   const inventory = allHeld ? green(`${held}/${total}`)
                             : yellow(`${held}/${total}`);
-  parts.push(`${glyph}${inventory}`);
-
-  // Skipped categories surfaced as a first-class state (Alertmanager
-  // "silenced" analogue — not collapsed into "ok").
+  const inventoryParts = [`${glyph}${inventory}`];
   if (skipped > 0) {
-    parts.push(`${yellow('○')}${skipped} ${dim('skipped')}`);
+    inventoryParts.push(`${yellow('○')}${skipped} ${dim('skipped')}`);
   }
+
+  const parts = [padVisualEnd(inventoryParts.join('  '), PRIMARY_COL_WIDTH)];
 
   // Activity field — collapsed to a single column. "↻N today (last:X Nm)".
   // One chunk instead of two saves a separator and keeps all activity

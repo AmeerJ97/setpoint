@@ -5,9 +5,13 @@
 import { cyan, dim, getCacheColor, getBurnColor, coloredBar, RESET } from '../colors.js';
 
 const SEP = ` ${dim('│')} `;
-import { formatTokens, padLabel } from '../format.js';
+import { formatTokens, padLabel, padVisualEnd } from '../format.js';
 import { calculateCost, formatCost } from '../../analytics/cost.js';
 import { sparkline } from '../sparkline.js';
+
+// Grid anchor shared with Context / Guard / Advisor so the first
+// `│` separator stacks vertically across lines.
+const PRIMARY_COL_WIDTH = 32;
 
 /**
  * @param {import('../renderer.js').RenderContext} ctx
@@ -75,7 +79,7 @@ export function renderTokensLine(ctx) {
     cyan(`out:${outTok}`),
     ...(sparkStr ? [sparkStr] : []),
     cacheBlock,
-  ];
+  ].join(' ');
 
   const burnLabel = stats.burnRateStale
     ? `${burnColor}burn:${Math.round(burnRate)}t/m${RESET}${dim('·stale')}`
@@ -91,7 +95,7 @@ export function renderTokensLine(ctx) {
   // R:E quality badge lives on the Guard line (HUD-SPEC §7). Tokens line
   // keeps burn/cost/cache, which is already dense.
 
-  return `${dim(label)} ${primary.join('  ')}${SEP}${secondary.join('  ')}`;
+  return `${dim(label)} ${padVisualEnd(primary, PRIMARY_COL_WIDTH)}${SEP}${secondary.join('  ')}`;
 }
 
 const ROLLING_CACHE_TURNS = 10;

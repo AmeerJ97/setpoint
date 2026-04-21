@@ -18,12 +18,13 @@ import { padLabel, padVisualEnd } from '../format.js';
 import { truncateToWidth } from '../text.js';
 import { pickSalienceSegment } from './advisor-salience.js';
 
-// Fixed column widths for two-row alignment. Chosen so the widest
-// realistic content in each column still fits without truncation:
-//   gauge  = "5h ▕" + 16 rail cells + "▏ 100→100" ≈ 28 visual cols
+// Fixed column widths for two-row alignment AND cross-line grid:
+//   gauge  = 32 cols → matches Context / Tokens / Guard `PRIMARY_COL_WIDTH`
+//            so the first `│` after the primary column stacks vertically
+//            across every line on the HUD.
 //   tte    = "TTE 9d23h" ≈ 9 visual cols
 //   conf   = "conf:high" = 9 visual cols
-const COL_GAUGE = 28;
+const COL_GAUGE = 32;
 const COL_TTE   = 9;
 const COL_CONF  = 9;
 
