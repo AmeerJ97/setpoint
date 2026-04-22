@@ -22,32 +22,29 @@ A *setpoint* is the target value a controller maintains against disturbance. Tha
 
 ## Install
 
-Not yet published to npm. Install from source:
+One command. Clone and run:
 
 ```bash
-git clone https://github.com/AmeerJ97/setpoint
-cd setpoint
-npm link              # exposes `setpoint` on PATH
+git clone https://github.com/AmeerJ97/setpoint && cd setpoint && bash scripts/install.sh
 ```
 
-Add to `~/.claude/settings.json`:
+That links the `setpoint` binary, wires it into `~/.claude/settings.json`
+as your statusLine, installs the analytics daemon (15s per-session poll),
+installs the health + advisor timers, and installs the quality guard
+(Rust binary if `cargo` is present, bash fallback otherwise).
 
-```json
-{ "statusLine": { "type": "command", "command": "setpoint" } }
-```
+Restart Claude Code — the HUD appears above the input area.
 
-Restart Claude Code. The HUD appears above the input area.
-
-Optional background services (systemd user units):
+The guard is installed but **not started** by default. Start it when
+ready:
 
 ```bash
-bash scripts/install-analytics.sh     # per-session cache + history
-bash scripts/install-health-timer.sh  # daily bloat / drift scan
-bash scripts/install-guard.sh         # inotify GrowthBook watcher
-                                      # (builds the Rust binary if cargo is present;
-                                      # falls back to the bash impl otherwise)
 systemctl --user start claude-quality-guard
 ```
+
+Uninstall with `bash scripts/rollback.sh`. Individual subsystem
+installers (`scripts/install-analytics.sh` etc.) remain available if
+you want to reinstall a single piece.
 
 ## CLI
 
