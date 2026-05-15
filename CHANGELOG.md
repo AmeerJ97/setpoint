@@ -12,9 +12,9 @@ Initial release.
 - Two-column layout on terminals ≥100 chars wide.
 
 ### Color + glyph policy
-- Oklab-interpolated gradients. Default palette is cividis (colorblind-safe); opt-in `SETPOINT_PALETTE=rag` for classic green/yellow/red.
-- Six-step capability detection honours `NO_COLOR`, `SETPOINT_PLAIN`, TTY status, `COLORTERM`, `TERM`; degrades truecolor → 256 → 16 → none.
-- Glyph policy: Unicode BMP by default, `SETPOINT_PLAIN=1` for ASCII, `SETPOINT_NERD=1` for Nerd Font icons.
+- Oklab-interpolated gradients. Default palette is cividis (colorblind-safe); opt-in `CLAUDE_OPS_PALETTE=rag` for classic green/yellow/red.
+- Six-step capability detection honours `NO_COLOR`, `CLAUDE_OPS_PLAIN`, TTY status, `COLORTERM`, `TERM`; degrades truecolor → 256 → 16 → none.
+- Glyph policy: Unicode BMP by default, `CLAUDE_OPS_PLAIN=1` for ASCII, `CLAUDE_OPS_NERD=1` for Nerd Font icons.
 
 ### Quality guard
 - bash + Python daemon watches `~/.claude.json` via `inotifywait`.
@@ -33,10 +33,10 @@ Initial release.
 - Every cache file, history entry, debounce marker, and RTK snapshot keyed by `session_id`. Concurrent Claude Code sessions never see each other's metrics. The HUD surfaces `⧉N sessions` on the Env line when more than one session is active.
 
 ### CLI
-- `setpoint` — render HUD from stdin.
-- `setpoint guard status [--json]` — three-column drilldown of the 17 categories with per-flag expected-vs-actual values. Exits non-zero on drift.
-- `setpoint demo` — render the HUD in every color and glyph mode back-to-back.
-- `setpoint health` / `setpoint advisor` — run the corresponding report once.
+- `claude-ops` — render HUD from stdin.
+- `claude-ops guard status [--json]` — three-column drilldown of the 17 categories with per-flag expected-vs-actual values. Exits non-zero on drift.
+- `claude-ops demo` — render the HUD in every color and glyph mode back-to-back.
+- `claude-ops health` / `claude-ops advisor` — run the corresponding report once.
 
 ### Infrastructure
 - Zero runtime dependencies. Node.js ≥ 18, Linux only.

@@ -3,18 +3,21 @@
 # Claude Quality Guard — Watches ~/.claude.json via inotifywait and re-applies
 # quality overrides within <500ms of any GrowthBook revert.
 #
-# Default state: DISABLED. Run `systemctl --user start claude-quality-guard` to activate.
+# Default state: DISABLED. Run `systemctl --user start claude-ops-guard` to activate.
 #
-# Usage: claude-quality-guard.sh {start|stop|status|enable|disable|config|skip|unskip|reset}
+# Usage: claude-ops-guard.sh {start|stop|status|enable|disable|config|skip|unskip|reset}
 
 set -euo pipefail
 
-CLAUDE_JSON="$HOME/.claude.json"
-LOG_FILE="/tmp/claude-quality-guard.log"
-PLUGIN_DIR="$HOME/.claude/plugins/claude-hud"
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CLAUDE_JSON="${CLAUDE_OPS_CLAUDE_JSON_PATH:-$HOME/.claude.json}"
+PLUGIN_DIR="$CLAUDE_DIR/plugins/claude-ops"
+LOG_FILE="$PLUGIN_DIR/guard.log"
 DISABLED_FLAG="$PLUGIN_DIR/guard-disabled"
 PID_FILE="$PLUGIN_DIR/guard.pid"
 CONFIG_DIR="$PLUGIN_DIR/guard-config"
+VERTEX_REQUIRED_ENV_KEYS=(CLAUDE_CODE_USE_VERTEX CLOUD_ML_REGION ANTHROPIC_VERTEX_PROJECT_ID)
+VERTEX_MODEL_ENV_KEYS=(ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_SMALL_FAST_MODEL)
 
 # Ensure directories exist
 mkdir -p "$PLUGIN_DIR" "$CONFIG_DIR"
@@ -30,18 +33,18 @@ declare -A CATEGORIES=(
   [summarize]="Prevents tool result compression/summarization"
   [maxtokens]="Sets max output tokens to 128K"
   [truncation]="Sets tool output truncation cap to 500K (every per-tool subkey)"
-  [refresh_ttl]="Extends refresh TTL to 1 year"
-  [mcp_connect]="Disables cloud MCP connectors"
-  [bridge]="Disables Claude Desktop bridge"
-  [grey_step]="Disables effort reducer v1"
-  [grey_step2]="Disables medium effort override"
-  [grey_wool]="Disables effort reducer v3"
+  [refresh_ttl]="Audits prompt cache enablement and documented 1-hour TTL request"
+  [mcp_connect]="Audits Claude.ai MCP server policy and Vertex tool-search compatibility"
+  [bridge]="Tracks internal Claude Desktop bridge disable flag"
+  [grey_step]="Tracks internal effort reducer v1 flag"
+  [grey_step2]="Tracks internal medium effort override flag"
+  [grey_wool]="Tracks internal effort reducer v3 flag"
   [thinking]="Restores thinking budget to 128K (Opus 4.6 and earlier only; skip on Opus 4.7 — API rejects thinking.budget_tokens)"
-  [willow_mode]="Disables capability downgrade mode"
-  [compact_max]="Sets compaction survival to 200K tokens"
-  [compact_init]="Sets compaction trigger to 500K tokens"
-  [tool_persist]="Preserves tool results across compaction"
-  [chomp]="Enables adaptive processing"
+  [willow_mode]="Tracks internal capability downgrade-mode flag"
+  [compact_max]="Audits documented compaction controls and internal compact max target"
+  [compact_init]="Audits documented compaction controls and internal trigger target"
+  [tool_persist]="Tracks internal tool-result persistence flag"
+  [chomp]="Tracks internal adaptive-processing flag"
 )
 
 TOTAL_CATEGORIES=${#CATEGORIES[@]}
@@ -88,7 +91,7 @@ apply_overrides() {
   python3 -c '
 import json, sys, os
 
-path = os.path.expanduser("~/.claude.json")
+path = os.environ.get("CLAUDE_OPS_CLAUDE_JSON_PATH") or os.path.expanduser("~/.claude.json")
 if not os.path.exists(path):
     data = {}
 else:
@@ -437,6 +440,7 @@ cmd_status() {
   fi
 
   echo "Categories: $active active, $skipped skipped (of $TOTAL_CATEGORIES)"
+  vertex_audit_status
 
   if [[ $skipped -gt 0 ]]; then
     echo "Skipped:"
@@ -453,13 +457,40 @@ cmd_status() {
   fi
 }
 
+vertex_audit_status() {
+  local active=0 missing=()
+  for key in "${VERTEX_REQUIRED_ENV_KEYS[@]}" "${VERTEX_MODEL_ENV_KEYS[@]}"; do
+    if [[ -n "${!key:-}" ]]; then
+      active=1
+      break
+    fi
+  done
+
+  if [[ "$active" -eq 0 ]]; then
+    echo "Vertex: inactive"
+    return 0
+  fi
+
+  for key in "${VERTEX_REQUIRED_ENV_KEYS[@]}"; do
+    if [[ -z "${!key:-}" ]]; then
+      missing+=("$key")
+    fi
+  done
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    echo "Vertex: audit-only env present (guard does not mutate env vars)"
+  else
+    echo "Vertex: audit-only env drift; missing ${missing[*]}"
+  fi
+}
+
 cmd_apply() {
   apply_overrides
 }
 
 cmd_enable() {
   rm -f "$DISABLED_FLAG"
-  echo "Quality guard ENABLED. Run '$(basename "$0") start' or 'systemctl --user start claude-quality-guard' to activate."
+  echo "Quality guard ENABLED. Run '$(basename "$0") start' or 'systemctl --user start claude-ops-guard' to activate."
 }
 
 cmd_disable() {

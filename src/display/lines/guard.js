@@ -3,8 +3,8 @@
  *
  * Phase 6C layout (compact, fits 80-col budget):
  *   Guard  ✓17/17 │ ↻4 today (last:brevity 2m) │ [shaded 17-glyph ribbon]
- *   Guard  ◐14/17 │ ○3 skipped │ quiet │ [ribbon]
- *   Guard  ✗ DOWN 17 unprotected — run systemctl --user start claude-quality-guard
+ *   Guard  ✗docs:4 │ int:10 probes │ quiet │ [ribbon]
+ *   Guard  ✗ DOWN 17 unprotected — run systemctl --user start claude-ops-guard
  *
  * Changes from the v1 layout:
  *   - "held" text dropped (redundant with ✓/◐ glyph).
@@ -97,37 +97,74 @@ export function renderGuardLine(ctx) {
   const narrow = ctx.narrow;
   const label = padLabel(narrow ? 'Grd' : 'Guard', narrow);
   const guard = ctx.guardStatus;
-  const total = totalCategories();
+  const summary = guard?.categorySummary ?? null;
+  const total = summary?.total ?? totalCategories();
 
   if (!guard || !guard.running) {
-    return `${dim(label)} ${red('✗ DOWN')} ${dim(`${total} unprotected`)} ${dim('— run systemctl --user start claude-quality-guard')}`;
+    if (guard?.disabled) {
+      const inventory = summary ? formatGuardSummary(summary) : dim('docs:unknown / int:unknown');
+      return `${dim(label)} ${red('✗ DISABLED')} ${inventory} ${dim('— run claude-ops guard mode audit|enforce')}`;
+    }
+    if (guard?.auditOnly) {
+      if (summary) {
+        const inventory = formatGuardSummary(summary);
+        const officialDrift = officialControlDrift(summary);
+        const hint = officialDrift > 0 ? '— run claude-ops guard validate' : '— run claude-ops guard status';
+        return `${dim(label)} ${yellow('◌ AUDIT')} ${inventory} ${dim(hint)}`;
+      }
+      return `${dim(label)} ${yellow('◌ AUDIT')} ${dim('docs:unknown · int:unknown')} ${dim('— run claude-ops guard validate')}`;
+    }
+    return `${dim(label)} ${red('✗ DOWN')} ${dim(`${total} unprotected`)} ${dim('— run systemctl --user start claude-ops-guard')}`;
   }
 
-  const skipped = guard.skippedCount ?? 0;
-  const held = Math.max(0, total - skipped);
-  const allHeld = skipped === 0;
+  const canonicalSummary = Boolean(summary?.official?.controls);
+  const skipped = skippedTotal(summary) ?? guard.skippedCount ?? 0;
+  const drift = canonicalSummary ? officialControlDrift(summary) : (summary?.drift ?? 0);
+  const held = canonicalSummary ? officialControlsHeld(summary) : (summary?.held ?? Math.max(0, total - skipped));
+  const allHeld = skipped === 0 && drift === 0;
 
   // Primary inventory — counts + skipped, grouped into a single padded
   // column so the first `│` aligns with Context / Tokens / Advisor.
   // "held" text dropped; the ✓/◐ glyph already carries the meaning.
-  const glyph = allHeld ? green('✓') : yellow('◐');
-  const inventory = allHeld ? green(`${held}/${total}`)
-                            : yellow(`${held}/${total}`);
-  const inventoryParts = [`${glyph}${inventory}`];
-  if (skipped > 0) {
-    inventoryParts.push(`${yellow('○')}${skipped} ${dim('skipped')}`);
+  const glyph = drift > 0 ? red('✗') : (allHeld ? green('✓') : yellow('◐'));
+  const inventoryParts = [];
+  if (canonicalSummary) {
+    inventoryParts.push(`${glyph}${drift > 0 ? red(`docs:${drift} drift`) : green('docs:ok')}`);
+    if (skipped > 0) inventoryParts.push(`${yellow('○')}${skipped} ${dim('skip')}`);
+    if ((summary.internal?.total ?? 0) > 0) {
+      inventoryParts.push(dim(`int:${summary.internal.total} probes`));
+    }
+  } else {
+    const inventory = drift > 0 ? red(`${held}/${total}`)
+                                : (allHeld ? green(`${held}/${total}`) : yellow(`${held}/${total}`));
+    inventoryParts.push(`${glyph}${inventory}`);
+    if (drift > 0) {
+      inventoryParts.push(`${red(String(drift))} ${dim('drift')}`);
+    }
+    if (skipped > 0) {
+      inventoryParts.push(`${yellow('○')}${skipped} ${dim('skipped')}`);
+    }
   }
 
   const parts = [padVisualEnd(inventoryParts.join('  '), PRIMARY_COL_WIDTH)];
 
-  // Activity field — collapsed to a single column. "↻N today (last:X Nm)".
-  // One chunk instead of two saves a separator and keeps all activity
-  // signal grouped. `top:` is dropped entirely; the ribbon now encodes
-  // frequency via shade.
+  // Activity field. Shape depends on whether the most-recent activation
+  // was a TARGETED drift (1-2 flags, a specific flag name is meaningful)
+  // or a BULK re-apply (GrowthBook rotated the full bucket — showing
+  // `last:swann_brevity` would be cosmetic noise because the flag is
+  // just first in the override-set's definition order).
   const count = guard.activationsToday ?? 0;
-  if (count > 0 && guard.lastActivation && guard.lastFlag) {
+  if (count > 0 && guard.lastActivation) {
     const ago = formatAgo(guard.lastActivation).replace(' ago', '');
-    parts.push(`${dim('↻')}${count} ${dim('today')} ${dim('(last:')}${cyan(guard.lastFlag)} ${dim(`${ago})`)}`);
+    const flagCount = guard.lastFlagCount ?? 0;
+    const isBulk = flagCount >= 5;
+    if (isBulk) {
+      parts.push(`${dim('↻')}${count} ${dim('today')} ${dim(`(${flagCount}-flag re-apply ${ago})`)}`);
+    } else if (guard.lastFlag) {
+      parts.push(`${dim('↻')}${count} ${dim('today')} ${dim('(last:')}${cyan(guard.lastFlag)} ${dim(`${ago})`)}`);
+    } else {
+      parts.push(`${dim('↻')}${count} ${dim('today')} ${dim(`(${ago})`)}`);
+    }
   } else {
     parts.push(dim('quiet'));
   }
@@ -150,8 +187,53 @@ export function renderGuardLine(ctx) {
   const ribbon = narrow ? renderRibbonDigest(guard) : renderRibbon(guard);
   if (ribbon) parts.push(ribbon);
 
+  // API mode indicator — GrowthBook flags still apply in API mode because
+  // Claude Code reads ~/.claude.json regardless of auth method. The `· API`
+  // suffix makes it clear the guard is active and the mode is known.
+  if (ctx.mode === 'api' || ctx.mode === 'unknown') {
+    parts.push(dim('API'));
+  }
+
   return `${dim(label)} ${parts.join(SEP)}`;
 }
+
+function formatGuardSummary(summary) {
+  if (summary?.official?.controls) {
+    const parts = [];
+    const officialDrift = officialControlDrift(summary);
+    parts.push(officialDrift > 0 ? red(`docs:${officialDrift} drift`) : green('docs:ok'));
+    if ((summary.internal?.total ?? 0) > 0) {
+      const probe = summary.internal.probe ?? 0;
+      const probeSuffix = probe > 0 ? ` (${probe} raw)` : '';
+      parts.push(dim(`int:${summary.internal.total} probes${probeSuffix}`));
+    }
+    const skipped = skippedTotal(summary) ?? 0;
+    if (skipped > 0) parts.push(yellow(`skip:${skipped}`));
+    return parts.join(dim(' / '));
+  }
+
+  const parts = [];
+  if ((summary.drift ?? 0) > 0) parts.push(`${red(String(summary.drift))} ${dim('drift')}`);
+  if ((summary.held ?? 0) > 0) parts.push(`${green(String(summary.held))} ${dim('held')}`);
+  if ((summary.skipped ?? 0) > 0) parts.push(`${yellow(String(summary.skipped))} ${dim('skip')}`);
+  if (parts.length === 0) return dim(`${summary.total ?? 0} categories`);
+  return parts.join(dim(' / '));
+}
+
+function officialControlDrift(summary) {
+  return summary?.official?.controls?.drift ?? 0;
+}
+
+function officialControlsHeld(summary) {
+  return summary?.official?.controls?.held ?? 0;
+}
+
+function skippedTotal(summary) {
+  if (!summary) return null;
+  if (typeof summary.skipped === 'number') return summary.skipped;
+  return summary.skipped?.total ?? null;
+}
+
 
 /**
  * Render the R:E badge. Wide: `R:E 4.2 (28r/7e) healthy`. Narrow: `R:E 4.2`.
@@ -206,7 +288,8 @@ function deriveReadEditBadge(ctx, narrow) {
  */
 function renderRibbonDigest(guard) {
   if (!guard) return null;
-  if (guard.lastFlag) {
+  const bulk = (guard.lastFlagCount ?? 0) >= 5;
+  if (!bulk && guard.lastFlag) {
     const head = guard.lastFlag.split('.')[0];
     if (FLAG_TO_CATEGORY[head]) return cyan('▲');
   }
@@ -251,8 +334,12 @@ function renderRibbon(guard) {
     revertCounts.set(cat, (revertCounts.get(cat) ?? 0) + n);
   }
 
-  // Most-recently-reverted category — highlighted regardless of shade.
-  const lastHead = (guard.lastFlag ?? '').split('.')[0];
+  // Most-recently-reverted category — highlighted regardless of shade,
+  // but ONLY when the activation actually looks targeted (≤ 2 flags).
+  // A full-bucket rotation's "first flag" is meaningless as a recency
+  // marker so we suppress the cyan ▲ to avoid fake signal.
+  const bulk = (guard.lastFlagCount ?? 0) >= 5;
+  const lastHead = bulk ? '' : (guard.lastFlag ?? '').split('.')[0];
   const lastCat = FLAG_TO_CATEGORY[lastHead] ?? null;
 
   const cells = order.map(cat => {

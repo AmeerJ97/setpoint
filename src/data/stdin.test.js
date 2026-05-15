@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getTotalTokens, getContextPercent, getBufferedPercent,
   getModelName, isBedrockModelId, getProviderLabel, getUsageFromStdin,
+  getContextUsage, getStatusLineCost, getStatusLineEffort,
 } from './stdin.js';
 
 describe('getTotalTokens', () => {
@@ -19,6 +20,52 @@ describe('getTotalTokens', () => {
     assert.equal(getTotalTokens({}), 0);
     assert.equal(getTotalTokens({ context_window: {} }), 0);
     assert.equal(getTotalTokens({ context_window: { current_usage: null } }), 0);
+  });
+
+  it('prefers native context_window totals over legacy current_usage sums', () => {
+    const stdin = {
+      exceeds_200k_tokens: true,
+      context_window: {
+        total_tokens: 12345,
+        total_input_tokens: 6000,
+        total_output_tokens: 2000,
+        total_thinking_tokens: 345,
+        context_window_size: 200000,
+        current_usage: {
+          input_tokens: 100,
+          output_tokens: 200,
+          cache_creation_input_tokens: 300,
+          cache_read_input_tokens: 400,
+        },
+      },
+    };
+
+    const usage = getContextUsage(stdin);
+    assert.equal(getTotalTokens(stdin), 12345);
+    assert.equal(usage.inputTokens, 6000);
+    assert.equal(usage.outputTokens, 2000);
+    assert.equal(usage.thinkingTokens, 345);
+    assert.equal(usage.cacheCreateTokens, 300);
+    assert.equal(usage.cacheReadTokens, 400);
+    assert.equal(usage.contextWindowSize, 200000);
+    assert.equal(usage.exceeds200k, true);
+  });
+});
+
+describe('statusLine cost and effort helpers', () => {
+  it('extracts native statusLine cost authority and effort level', () => {
+    const stdin = {
+      cost: { total_cost_usd: 1.23 },
+      effort: { level: ' HIGH ' },
+    };
+
+    assert.deepEqual(getStatusLineCost(stdin), { costUsd: 1.23, authority: 'statusline-cost' });
+    assert.equal(getStatusLineEffort(stdin), 'high');
+  });
+
+  it('reports missing cost authority when statusLine cost is absent', () => {
+    assert.deepEqual(getStatusLineCost({}), { costUsd: null, authority: 'missing' });
+    assert.equal(getStatusLineEffort({ effort: { level: '' } }), null);
   });
 });
 

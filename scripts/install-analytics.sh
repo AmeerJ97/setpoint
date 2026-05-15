@@ -1,19 +1,22 @@
 #!/bin/bash
-# Install the analytics daemon as a systemd user service
+# Install the analytics collector as an on-demand systemd user service
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
 SERVICE_DIR="$HOME/.config/systemd/user"
+SERVICE_DIR="${CLAUDE_OPS_SYSTEMD_USER_DIR:-$SERVICE_DIR}"
 mkdir -p "$SERVICE_DIR"
 
 # Substitute template variable and install service file
 sed "s|{{INSTALL_DIR}}|${SCRIPT_DIR}|g" \
   "${SCRIPT_DIR}/config/analytics-daemon.service" \
-  > "$SERVICE_DIR/claude-hud-analytics.service"
+  > "$SERVICE_DIR/claude-ops-analytics.service"
 
-systemctl --user daemon-reload
-systemctl --user enable claude-hud-analytics.service
-systemctl --user start claude-hud-analytics.service
-
-echo "Analytics daemon installed and started"
-systemctl --user status claude-hud-analytics.service --no-pager
+if [ "${CLAUDE_OPS_SKIP_SYSTEMCTL:-0}" != "1" ]; then
+  systemctl --user daemon-reload
+  systemctl --user disable --now claude-ops-analytics.service >/dev/null 2>&1 || true
+  echo "Analytics collector installed (on-demand; Claude Code HUD starts it while sessions are active)"
+  systemctl --user show claude-ops-analytics.service -p LoadState -p ActiveState -p UnitFileState --no-pager
+else
+  echo "Analytics collector unit installed (systemctl skipped)"
+fi

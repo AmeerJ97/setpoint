@@ -140,8 +140,6 @@ function rightTokens(ctx) {
   if (stats.userTurns > 0) parts.push(dim(`turns:${stats.userTurns}`));
   const cost = calculateCost(stats, ctx.stdin?.model?.id ?? ctx.stdin?.model?.display_name);
   if (cost > 0) parts.push(cyan(`Σ${formatCost(cost)}`));
-  const rtk = ctx.rtkStats;
-  if (rtk?.totalCommands > 0) parts.push(dim(`rtk:${rtk.totalCommands}cmds`));
   return parts.join('  ') || dim('--');
 }
 

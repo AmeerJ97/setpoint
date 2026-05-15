@@ -63,6 +63,136 @@ test('combined gauge renders current and projection for primary window', () => {
   assert.doesNotMatch(line, /314t\/m/);
 });
 
+test('subscription advisor line leaves backend identity to Model line', () => {
+  const line = strip(renderAdvisorLine({
+    narrow: false,
+    billingSignal: 'quota-window',
+    runtimeMode: {
+      authProvider: 'subscription',
+      billingSignal: 'quota-window',
+      mode: 'max',
+      backend: 'anthropic-pro',
+      telemetryAuthority: 'server-rate-limits',
+    },
+    advisory: {
+      signal: 'increase',
+      action: 'on track',
+      confidence: 'med',
+      fiveHour: { current: 20, projected: 0.3, level: 'ok' },
+      sevenDay: { current: 10, projected: 0.2, level: 'ok' },
+    },
+  }));
+  assert.match(line, /Advisor\s+5h/);
+  assert.doesNotMatch(line, /\[ANTHROPIC-PRO\]/);
+});
+
+
+test('Vertex advisor line shows authoritative telemetry badge when api-backed', () => {
+  const line = strip(renderAdvisorLine({
+    narrow: false,
+    billingSignal: 'cost-metered',
+    authProvider: 'vertex',
+    mode: 'api',
+    runtimeMode: {
+      authProvider: 'vertex',
+      billingSignal: 'cost-metered',
+      mode: 'api',
+      backend: 'vertex-ai',
+      telemetryAuthority: 'vertex-api',
+    },
+    apiWindowRefs: {
+      sessionCostUsd: 1.10,
+      ref7dCostUsd: null,
+    },
+    vertexTelemetry: {
+      telemetryAuthority: 'vertex-api',
+      dataMaturity: { state: 'authoritative' },
+    },
+    tokenStats: { durationMin: 30 },
+    advisory: {
+      signal: 'reduce',
+      action: 'Vertex burn hot',
+      confidence: 'high',
+      tier: 'vertex_burn_high',
+    },
+  }));
+  assert.match(line, /billing:api authoritative/);
+});
+
+
+test('Vertex advisor line treats zero API cost as authoritative data', () => {
+  const line = strip(renderAdvisorLine({
+    narrow: false,
+    billingSignal: 'cost-metered',
+    authProvider: 'vertex',
+    mode: 'api',
+    runtimeMode: {
+      authProvider: 'vertex',
+      billingSignal: 'cost-metered',
+      mode: 'api',
+      backend: 'vertex-ai',
+      telemetryAuthority: 'vertex-api',
+    },
+    apiWindowRefs: {
+      sessionCostUsd: 0,
+      ref7dCostUsd: 0,
+    },
+    vertexTelemetry: {
+      telemetryAuthority: 'vertex-api',
+      dataMaturity: { state: 'authoritative' },
+      fiveHour: { costUsd: 0 },
+      sevenDay: { costUsd: 0 },
+    },
+    tokenStats: { durationMin: 30 },
+    advisory: {
+      signal: 'nominal',
+      action: 'hold',
+      confidence: 'high',
+      tier: 'ok',
+    },
+  }));
+  assert.match(line, /\$0.00\/h/);
+  assert.match(line, /5h:\$0.00/);
+  assert.match(line, /7d:\$0.00/);
+  assert.doesNotMatch(line, /api-cost missing/);
+});
+
+test('Vertex advisor line avoids duplicating API-missing details when telemetry is synthetic', () => {
+  const line = strip(renderAdvisorLine({
+    narrow: false,
+    billingSignal: 'cost-metered',
+    authProvider: 'vertex',
+    mode: 'api',
+    runtimeMode: {
+      authProvider: 'vertex',
+      billingSignal: 'cost-metered',
+      mode: 'api',
+      backend: 'vertex-ai',
+      telemetryAuthority: 'local-synthetic',
+    },
+    apiWindowRefs: {
+      sessionCostUsd: 1.24,
+      ref7dCostUsd: null,
+    },
+    vertexTelemetry: {
+      dataMaturity: { state: 'warming' },
+    },
+    tokenStats: { durationMin: 30 },
+    advisory: {
+      signal: 'limit_hit',
+      action: 'pause Vertex traffic',
+      confidence: 'med',
+      tier: 'vertex_quota_exhausted',
+    },
+  }));
+  assert.doesNotMatch(line, /\[VERTEX-AI\]/);
+  assert.match(line, /collect api-cost/);
+  assert.match(line, /billing:missing/);
+  assert.doesNotMatch(line, /api-cost missing/);
+  assert.doesNotMatch(line, /telemetry:api-missing/);
+  assert.doesNotMatch(line, /TTE/);
+});
+
 test('narrow mode drops the gauge but keeps the rec', () => {
   const line = strip(renderAdvisorLine({
     narrow: true,

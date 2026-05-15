@@ -1,0 +1,29 @@
+{
+  "session_id": "fixture-subscription",
+  "transcript_path": "",
+  "cwd": "/tmp/claude-ops-fixture",
+  "model": {
+    "id": "claude-opus-4-7",
+    "display_name": "Claude Opus 4.7"
+  },
+  "context_window": {
+    "context_window_size": 200000,
+    "used_percentage": 42,
+    "current_usage": {
+      "input_tokens": 42000,
+      "output_tokens": 9500,
+      "cache_creation_input_tokens": 1000,
+      "cache_read_input_tokens": 8000
+    }
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 62,
+      "resets_at": null
+    },
+    "seven_day": {
+      "used_percentage": 38,
+      "resets_at": null
+    }
+  }
+}

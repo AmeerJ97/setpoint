@@ -1,49 +1,76 @@
 /**
- * Guard status reader — parses /tmp/claude-quality-guard.log
+ * Guard status reader — parses the guard log (from GUARD_LOG_FILE)
  * and checks if the guard systemd service is running.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { GUARD_LOG_FILE, PLUGIN_DIR } from '../data/paths.js';
+import { collectGuardState } from '../cli/guard-status.js';
+import { buildGuardPresentationSummary, collectGuardValidationState } from '../guard/guard-validation.js';
 
 const execFileAsync = promisify(execFile);
 
 /**
  * @typedef {object} GuardStatus
  * @property {boolean} running
+ * @property {string} activeState
+ * @property {string} enabledState
+ * @property {boolean} auditOnly
  * @property {number} activationsToday
  * @property {number} activationsLastHour
  * @property {Date|null} lastActivation
  * @property {string|null} lastFlag
+ * @property {number} lastFlagCount - how many flags drifted in the most-recent activation.
+ *   GrowthBook typically rotates the whole experiment bucket at once, so a count of 15+
+ *   means a bulk re-apply and `lastFlag` is NOT a meaningful signal of "the flag that
+ *   drifted" — it's just arbitrary first-in-list. The display uses this to decide
+ *   whether to surface `last:<flag>` at all.
  * @property {Record<string, number>} flagCounts - per-flag activation counts today
  * @property {string|null} topFlag - most frequently reverted flag today
  * @property {number} skippedCount - number of skipped override categories
  * @property {string[]} skippedCategories - names of skipped categories (subset of defaults.guard.categories)
  * @property {Record<string, string>} skipReasons - optional single-line reason per skipped category, keyed by category name
+ * @property {object|null} categorySummary
  */
 
 /**
  * @returns {Promise<GuardStatus>}
  */
 export async function readGuardStatus() {
-  const running = await isGuardRunning();
-  const { activationsToday, activationsLastHour, lastActivation, lastFlag, flagCounts, topFlag } = parseGuardLog();
+  const service = await readGuardServiceState();
+  const { activationsToday, activationsLastHour, lastActivation, lastFlag, lastFlagCount, flagCounts, topFlag } = parseGuardLog();
   const skippedCategories = listSkippedCategories();
   const skippedCount = skippedCategories.length;
   const skipReasons = readSkipReasons(skippedCategories);
+  const categorySummary = readCategorySummary();
 
   return {
-    running, activationsToday, activationsLastHour,
-    lastActivation, lastFlag, flagCounts, topFlag, skippedCount,
-    skippedCategories, skipReasons,
+    running: service.running && !service.disabled,
+    activeState: service.activeState,
+    enabledState: service.enabledState,
+    auditOnly: !service.disabled && !service.running && service.enabledState !== 'enabled',
+    disabled: service.disabled,
+    activationsToday, activationsLastHour,
+    lastActivation, lastFlag, lastFlagCount, flagCounts, topFlag, skippedCount,
+    skippedCategories, skipReasons, categorySummary,
   };
+}
+
+function readCategorySummary() {
+  try {
+    const rows = collectGuardState();
+    const validation = collectGuardValidationState();
+    return buildGuardPresentationSummary(rows, validation);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Read optional `<cat>.skip.reason` sibling files for each skipped category.
  * The reason is a single-line tag (e.g. `opus_4_7_incompatible`) that makes
- * the skip state self-documenting on `setpoint guard status`.
+ * the skip state self-documenting on `claude-ops guard status`.
  * @param {string[]} cats
  * @returns {Record<string, string>}
  */
@@ -65,23 +92,29 @@ function readSkipReasons(cats) {
  * @returns {Promise<boolean>}
  */
 async function isGuardRunning() {
+  return (await readGuardServiceState()).running;
+}
+
+async function readGuardServiceState() {
+  const activeState = await systemctlState('is-active');
+  const enabledState = await systemctlState('is-enabled');
+  return {
+    running: activeState === 'active',
+    activeState,
+    enabledState,
+    disabled: existsSync(`${PLUGIN_DIR}/guard-disabled`),
+  };
+}
+
+async function systemctlState(action) {
   try {
     const { stdout } = await execFileAsync(
-      'systemctl', ['--user', 'is-active', 'claude-quality-guard'],
+      'systemctl', ['--user', action, 'claude-ops-guard.service'],
       { timeout: 1000, encoding: 'utf8' }
     );
-    return stdout.trim() === 'active';
-  } catch {
-    // Also check for process directly
-    try {
-      const { stdout } = await execFileAsync(
-        'pgrep', ['-f', 'claude-quality-guard'],
-        { timeout: 1000, encoding: 'utf8' }
-      );
-      return stdout.trim().length > 0;
-    } catch {
-      return false;
-    }
+    return stdout.trim() || 'unknown';
+  } catch (error) {
+    return String(error?.stdout ?? '').trim() || 'unknown';
   }
 }
 
@@ -113,6 +146,7 @@ function parseGuardLog() {
     activationsLastHour: 0,
     lastActivation: null,
     lastFlag: null,
+    lastFlagCount: 0,
     flagCounts: {},
     topFlag: null,
   };
@@ -146,7 +180,14 @@ function parseGuardLog() {
 
       const flags = parseFlagsFromLine(line);
       if (flags.length > 0) {
+        // Only attribute a `lastFlag` when the drift actually looks
+        // targeted (≤ 2 flags in the activation). GrowthBook rotates
+        // the full 24-flag override set at once, so picking `flags[0]`
+        // from a bulk re-apply is meaningless — it's just the first
+        // in the guard's definition order. Surface the COUNT instead
+        // and let the display decide how honest to be.
         result.lastFlag = flags[0]?.replace('tengu_', '') ?? null;
+        result.lastFlagCount = flags.length;
       }
 
       if (isToday) {

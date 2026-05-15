@@ -31,6 +31,15 @@ jobs:
       - name: Run test suite
         run: npm test
 
+      - name: Run Rust guard tests
+        run: cargo test --manifest-path src/guard/rust/Cargo.toml
+
+      - name: Check shell syntax
+        run: npm run check:syntax
+
+      - name: Check whitespace
+        run: git diff --check
+
       - name: Smoke-test HUD rendering
         run: |
           echo '{"session_id":"ci","model":{"id":"claude-opus-4-7","display_name":"Opus 4.7"},"context_window":{"context_window_size":200000,"used_percentage":10,"current_usage":{"input_tokens":100,"output_tokens":50}},"rate_limits":{"five_hour":{"used_percentage":5},"seven_day":{"used_percentage":3}}}' \
@@ -44,3 +53,21 @@ jobs:
           # In CI ~/.claude.json doesn't exist; guard-status should still
           # run cleanly and exit non-zero for drift (expected).
           node src/cli/index.js guard status || true
+
+      - name: Smoke-test doctor and repair with temp install dirs
+        run: |
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/.claude" "$tmp/systemd" "$tmp/bin"
+          CLAUDE_CONFIG_DIR="$tmp/.claude" \
+          CLAUDE_OPS_SYSTEMD_USER_DIR="$tmp/systemd" \
+          CLAUDE_OPS_BIN_DIR="$tmp/bin" \
+          CLAUDE_OPS_SKIP_SYSTEMCTL=1 \
+            node src/cli/index.js doctor --json || true
+          CLAUDE_CONFIG_DIR="$tmp/.claude" \
+          CLAUDE_OPS_SYSTEMD_USER_DIR="$tmp/systemd" \
+          CLAUDE_OPS_BIN_DIR="$tmp/bin" \
+          CLAUDE_OPS_SKIP_SYSTEMCTL=1 \
+            node src/cli/index.js repair --json
+
+      - name: Inspect package contents
+        run: npm run pack:check

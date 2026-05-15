@@ -1,5 +1,5 @@
 /**
- * `setpoint context` — replicates the native /context grid.
+ * `claude-ops context` — replicates the native /context grid.
  *
  * Native /context (Claude Code 2.1.111+) is interactive-only — there is
  * no `--print`, no `--context` flag, no JSON dump. The only way to see
@@ -9,16 +9,18 @@
  * questions it's accurate enough; for hard accounting, type /context.
  *
  * Usage:
- *   setpoint context [--session <id>] [--json] [--cwd <dir>]
+ *   claude-ops context [--session <id>] [--latest] [--json] [--cwd <dir>]
  *
  *   --session <id>   Bucket a specific session (defaults to the most
  *                    recently active one for the current cwd).
+ *   --latest         Prefer the newest transcript on disk when active-session
+ *                    metadata is missing or stale.
  *   --json           Emit the bucket report as JSON instead of the grid.
  *   --cwd <dir>      Override the project dir for agent/memory walks
  *                    (useful when invoking from outside a project).
  */
 
-import { findActiveSessions, findSessionJsonl } from '../data/session.js';
+import { findActiveSessions, findLatestSessionJsonl, findSessionJsonl } from '../data/session.js';
 import { buildBucketReport } from '../context/buckets.js';
 import { renderGrid } from '../context/grid.js';
 
@@ -34,9 +36,9 @@ export async function main(argv = []) {
   }
 
   const cwd = args.cwd ?? process.cwd();
-  const sessionInfo = resolveSession(args.session, cwd);
+  const sessionInfo = resolveSession(args.session, cwd, args.latest);
   if (!sessionInfo) {
-    process.stderr.write(`setpoint context: no session JSONL found${args.session ? ` for ${args.session}` : ''}\n`);
+    process.stderr.write(`claude-ops context: no session JSONL found${args.session ? ` for ${args.session}` : ''}\n`);
     process.stderr.write('hint: open a Claude Code session in this directory first, or pass --session <id>\n');
     return 1;
   }
@@ -59,7 +61,7 @@ export async function main(argv = []) {
 }
 
 function parseArgs(argv) {
-  const out = { help: false, json: false, session: null, cwd: null };
+  const out = { help: false, json: false, latest: false, session: null, cwd: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
@@ -69,6 +71,9 @@ function parseArgs(argv) {
         break;
       case '--json':
         out.json = true;
+        break;
+      case '--latest':
+        out.latest = true;
         break;
       case '--session':
         out.session = argv[++i];
@@ -86,13 +91,14 @@ function parseArgs(argv) {
 
 function printHelp() {
   process.stdout.write(`\
-setpoint context — bucket the active session's context window
+claude-ops context — bucket the active session's context window
 
 Usage:
-  setpoint context [--session <id>] [--json] [--cwd <dir>]
+  claude-ops context [--session <id>] [--latest] [--json] [--cwd <dir>]
 
 Options:
   --session <id>   Specific session id (default: most recent active session)
+  --latest         Fall back to the newest transcript on disk
   --json           JSON output instead of the rendered grid
   --cwd <dir>      Override project dir for agent/memory walks
   -h, --help       Show this help
@@ -111,9 +117,10 @@ Notes:
  *
  * @param {string|null} explicitId
  * @param {string} cwd
+ * @param {boolean} preferLatest
  * @returns {{ path: string, sessionId: string, modelLabel?: string }|null}
  */
-function resolveSession(explicitId, cwd) {
+function resolveSession(explicitId, cwd, preferLatest = false) {
   if (explicitId) {
     const found = findSessionJsonl(explicitId);
     return found ? { path: found.path, sessionId: explicitId } : null;
@@ -121,12 +128,13 @@ function resolveSession(explicitId, cwd) {
 
   // Active sessions are ranked by liveness; prefer ones rooted in `cwd`.
   const active = findActiveSessions();
-  if (active.length === 0) {
-    return null;
+  if (!preferLatest && active.length > 0) {
+    const matchingCwd = active.find(s => s.cwd && cwd.startsWith(s.cwd));
+    const chosen = matchingCwd ?? active[active.length - 1];
+    const found = findSessionJsonl(chosen.sessionId);
+    if (found) return { path: found.path, sessionId: chosen.sessionId };
   }
-  const matchingCwd = active.find(s => s.cwd && cwd.startsWith(s.cwd));
-  const chosen = matchingCwd ?? active[active.length - 1];
-  const found = findSessionJsonl(chosen.sessionId);
-  if (!found) return null;
-  return { path: found.path, sessionId: chosen.sessionId };
+
+  const latest = findLatestSessionJsonl(cwd);
+  return latest ? { path: latest.path, sessionId: '(latest)' } : null;
 }

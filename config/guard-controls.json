@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "posture": "audit-first",
+  "docs": [
+    "https://code.claude.com/docs/en/env-vars",
+    "https://code.claude.com/docs/en/settings",
+    "https://code.claude.com/docs/en/statusline",
+    "https://code.claude.com/docs/en/hooks",
+    "https://code.claude.com/docs/en/google-vertex-ai"
+  ],
+  "categories": {
+    "brevity": {
+      "claim": "Prevents brevity enforcer from shortening responses",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "quiet": {
+      "claim": "Disables quiet modes that suppress tool output",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "summarize": {
+      "claim": "Prevents tool result compression/summarization",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "maxtokens": {
+      "claim": "Sets max output tokens high enough for long responses",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-opt-in",
+      "risk": "medium",
+      "officialControls": [
+        {
+          "name": "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+          "kind": "env",
+          "expected": { "type": "number-min", "value": 128000 },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented output-token override. Claude docs note model defaults and caps vary."
+        }
+      ]
+    },
+    "truncation": {
+      "claim": "Raises tool/file output limits where documented controls exist",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-opt-in",
+      "risk": "medium",
+      "officialControls": [
+        {
+          "name": "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS",
+          "kind": "env",
+          "expected": { "type": "number-min", "value": 500000 },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented file-read output token limit."
+        },
+        {
+          "name": "MAX_MCP_OUTPUT_TOKENS",
+          "kind": "env",
+          "expected": { "type": "number-min", "value": 500000 },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented MCP tool-response output token limit."
+        }
+      ]
+    },
+    "refresh_ttl": {
+      "claim": "Audits prompt caching enabled state and documented 1-hour TTL request where supported",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-opt-in",
+      "risk": "low",
+      "officialControls": [
+        {
+          "name": "DISABLE_PROMPT_CACHING",
+          "kind": "env",
+          "expected": { "type": "not-truthy" },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Prompt caching should not be globally disabled."
+        },
+        {
+          "name": "ENABLE_PROMPT_CACHING_1H",
+          "kind": "env",
+          "expected": { "type": "truthy" },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Requests 1-hour cache TTL instead of the default 5 minutes for supported API/provider modes."
+        }
+      ]
+    },
+    "mcp_connect": {
+      "claim": "Audits Claude.ai MCP server policy and avoids Vertex-incompatible tool-search forcing",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-opt-in",
+      "risk": "medium",
+      "officialControls": [
+        {
+          "name": "ENABLE_CLAUDEAI_MCP_SERVERS",
+          "kind": "env",
+          "expected": { "type": "false" },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented switch for Claude.ai-origin MCP servers."
+        },
+        {
+          "name": "ENABLE_TOOL_SEARCH",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/google-vertex-ai",
+          "note": "On Vertex AI, forcing true sends a beta header the endpoint rejects."
+        }
+      ]
+    },
+    "bridge": {
+      "claim": "Tracks internal Claude Desktop bridge disable flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "grey_step": {
+      "claim": "Tracks internal effort reducer v1 flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "grey_step2": {
+      "claim": "Tracks internal medium effort override flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "grey_wool": {
+      "claim": "Tracks internal effort reducer v3 flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "thinking": {
+      "claim": "Validates documented thinking-token controls without mutating request thinking shape by default",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-skipped",
+      "risk": "high",
+      "officialControls": [
+        {
+          "name": "MAX_THINKING_TOKENS",
+          "kind": "env",
+          "expected": { "type": "number-min", "value": 128000 },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented thinking budget override; adaptive reasoning can ignore it unless disabled."
+        },
+        {
+          "name": "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented adaptive-reasoning disable switch for models where it applies."
+        },
+        {
+          "name": "CLAUDE_CODE_DISABLE_THINKING",
+          "kind": "env",
+          "expected": { "type": "not-truthy" },
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "If set, thinking is disabled entirely."
+        }
+      ]
+    },
+    "willow_mode": {
+      "claim": "Tracks internal capability downgrade-mode flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "compact_max": {
+      "claim": "Audits compaction behavior against documented controls; internal compact target remains experimental",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-opt-in",
+      "risk": "medium",
+      "officialControls": [
+        {
+          "name": "DISABLE_AUTO_COMPACT",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented switch to disable automatic compaction while leaving manual /compact available."
+        },
+        {
+          "name": "DISABLE_COMPACT",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented switch to disable automatic and manual compaction."
+        },
+        {
+          "name": "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented context-window override when DISABLE_COMPACT is also set."
+        }
+      ]
+    },
+    "compact_init": {
+      "claim": "Audits compaction trigger behavior against documented controls; internal trigger target remains experimental",
+      "authority": "hybrid",
+      "enforcement": "validate-official-internal-opt-in",
+      "risk": "medium",
+      "officialControls": [
+        {
+          "name": "DISABLE_AUTO_COMPACT",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented switch to disable automatic compaction while leaving manual /compact available."
+        },
+        {
+          "name": "DISABLE_COMPACT",
+          "kind": "env",
+          "doc": "https://code.claude.com/docs/en/env-vars",
+          "note": "Documented switch to disable automatic and manual compaction."
+        }
+      ]
+    },
+    "tool_persist": {
+      "claim": "Tracks internal tool-result persistence flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    },
+    "chomp": {
+      "claim": "Tracks internal adaptive-processing flag",
+      "authority": "internal-growthbook",
+      "enforcement": "internal-opt-in",
+      "risk": "medium",
+      "officialControls": []
+    }
+  }
+}

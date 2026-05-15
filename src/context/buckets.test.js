@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { buildBucketReport, estimateTokens, readLatestInputTokens } from './buckets.js';
 
 function tempProject(content = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'setpoint-context-'));
+  const root = mkdtempSync(join(tmpdir(), 'claude-ops-context-'));
   if (content.agents) {
     mkdirSync(join(root, '.claude', 'agents'), { recursive: true });
     for (const [name, body] of Object.entries(content.agents)) {
@@ -44,7 +44,7 @@ test('buildBucketReport produces every required bucket', () => {
 
 test('buildBucketReport reports a positive freeSpace when buckets are small', () => {
   const cwd = tempProject();
-  const r = buildBucketReport({ cwd, contextWindow: 200_000 });
+  const r = buildBucketReport({ cwd, contextWindow: 10_000_000 });
   assert.ok(r.freeSpace > 0, `freeSpace should be > 0, got ${r.freeSpace}`);
   assert.ok(r.freeSpace + r.totalTokens + r.autocompactBuffer <= r.contextWindow + 5,
     'freeSpace + total + buffer must fit in window (±rounding)');
@@ -71,7 +71,7 @@ test('agent files inflate the Custom Agents bucket', () => {
 });
 
 test('readLatestInputTokens picks the most recent assistant turn', () => {
-  const root = mkdtempSync(join(tmpdir(), 'setpoint-context-jsonl-'));
+  const root = mkdtempSync(join(tmpdir(), 'claude-ops-context-jsonl-'));
   const path = join(root, 's.jsonl');
   const lines = [
     JSON.stringify({ message: { role: 'user', content: 'hi' } }),
@@ -84,28 +84,28 @@ test('readLatestInputTokens picks the most recent assistant turn', () => {
 });
 
 test('readLatestInputTokens returns null when no assistant turn exists', () => {
-  const root = mkdtempSync(join(tmpdir(), 'setpoint-context-jsonl-empty-'));
+  const root = mkdtempSync(join(tmpdir(), 'claude-ops-context-jsonl-empty-'));
   const path = join(root, 's.jsonl');
   writeFileSync(path, JSON.stringify({ message: { role: 'user', content: 'hi' } }) + '\n');
   assert.equal(readLatestInputTokens(path), null);
 });
 
 test('Messages bucket equals input_tokens minus other buckets when transcript present', () => {
-  const root = mkdtempSync(join(tmpdir(), 'setpoint-context-msg-'));
+  const root = mkdtempSync(join(tmpdir(), 'claude-ops-context-msg-'));
   const path = join(root, 's.jsonl');
-  // input_tokens = 100_000 — leaves some after subtracting baselines.
+  // input_tokens = 10M — leaves some after subtracting baselines (even if local skills are huge).
   writeFileSync(path, JSON.stringify({
-    message: { role: 'assistant', usage: { input_tokens: 100_000 } },
+    message: { role: 'assistant', usage: { input_tokens: 10_000_000 } },
   }) + '\n');
 
   const r = buildBucketReport({ cwd: tempProject(), transcriptPath: path });
   const otherSum = r.buckets.filter(b => b.name !== 'Messages').reduce((a, b) => a + b.tokens, 0);
   const messages = r.buckets.find(b => b.name === 'Messages').tokens;
-  assert.equal(messages + otherSum, 100_000, `messages + others must reconstruct input_tokens`);
+  assert.equal(messages + otherSum, 10_000_000, `messages + others must reconstruct input_tokens`);
 });
 
 test('Messages bucket clamps to 0 when other buckets exceed the transcript total', () => {
-  const root = mkdtempSync(join(tmpdir(), 'setpoint-context-clamp-'));
+  const root = mkdtempSync(join(tmpdir(), 'claude-ops-context-clamp-'));
   const path = join(root, 's.jsonl');
   writeFileSync(path, JSON.stringify({
     message: { role: 'assistant', usage: { input_tokens: 100 } },

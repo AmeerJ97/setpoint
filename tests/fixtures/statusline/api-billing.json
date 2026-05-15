@@ -1,0 +1,19 @@
+{
+  "session_id": "fixture-api-billing",
+  "transcript_path": "",
+  "cwd": "/tmp/claude-ops-fixture",
+  "model": {
+    "id": "claude-sonnet-4-5",
+    "display_name": "Claude Sonnet 4.5"
+  },
+  "context_window": {
+    "context_window_size": 200000,
+    "used_percentage": 18,
+    "current_usage": {
+      "input_tokens": 18000,
+      "output_tokens": 3400,
+      "cache_creation_input_tokens": 1200,
+      "cache_read_input_tokens": 22000
+    }
+  }
+}

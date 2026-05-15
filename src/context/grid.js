@@ -1,5 +1,5 @@
 /**
- * Adaptive grid renderer for `setpoint context`.
+ * Adaptive grid renderer for `claude-ops context`.
  *
  * Native /context picks grid dimensions based on the model's window size:
  *   200K models → 10×10 (1 cell = 1% = 2K tokens)
@@ -161,7 +161,7 @@ export function renderGrid(report, terminalCols = 80) {
  * Returns an array of lines (one per grid row) for embedding in the HUD
  * right column. The visual contract matches `renderGrid` (same glyphs,
  * same colors, same bucket order) so the inline version and the
- * `setpoint context` CLI read the same way.
+ * `claude-ops context` CLI read the same way.
  *
  * A single title row precedes the grid (`Context 42K/200K (21%)`) so the
  * user has a reference for the body. Pass `{ noTitle: true }` to omit it.

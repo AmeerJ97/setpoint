@@ -1,13 +1,13 @@
 [package]
-name = "setpoint-guard"
+name = "claude-ops-guard"
 version = "2.0.0"
 edition = "2021"
 description = "Quality guard for Claude Code — holds tengu_* GrowthBook flags at configured setpoints"
-authors = ["setpoint contributors"]
+authors = ["claude-ops contributors"]
 license = "MIT"
 
 [[bin]]
-name = "setpoint-guard"
+name = "claude-ops-guard"
 path = "src/main.rs"
 
 [dependencies]

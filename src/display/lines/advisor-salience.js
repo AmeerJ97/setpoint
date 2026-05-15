@@ -63,5 +63,15 @@ export function pickSalienceSegment(advisory, window) {
     return `${yellow('◐')} ${dim('R:E')} ${yellow(m.ratio.toFixed(1))}`;
   }
 
+  // 4. Logistic-regression risk score — only shows when the trained
+  //    classifier strongly disagrees with the rule-based ladder
+  //    (risk > 0.6). Deliberately last in priority: the other
+  //    signals are directly actionable; this one is a learned hint
+  //    that something ELSE is off even if no single rule tripped.
+  const lr = advisory?.classifier;
+  if (lr && Number.isFinite(lr.probabilities?.risk) && lr.probabilities.risk > 0.6) {
+    return `${dim('lr:risk')} ${dim(lr.probabilities.risk.toFixed(2))}`;
+  }
+
   return null;
 }

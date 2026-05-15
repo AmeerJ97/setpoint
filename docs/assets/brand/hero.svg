@@ -1,8 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" font-family="'JetBrains Mono','Fira Code','Menlo',ui-monospace,monospace" font-size="18">
   <!--
-    Hero: stylised terminal rendering of the v2.1 HUD. Text and colors
-    match actual `setpoint` output at truecolor + cividis. Every span is
-    authored — no AI image-gen.
+    Hero: stylised terminal rendering of Claude Ops. Text and colors
+    match actual `claude-ops` output at truecolor + cividis.
   -->
 
   <!-- Window -->
@@ -14,7 +13,7 @@
   <circle cx="38"  cy="33" r="6" fill="#ff5f56"/>
   <circle cx="60"  cy="33" r="6" fill="#ffbd2e"/>
   <circle cx="82"  cy="33" r="6" fill="#27c93f"/>
-  <text x="600" y="38" text-anchor="middle" fill="#4a5a78" font-size="14">setpoint — ~/dev/project</text>
+  <text x="600" y="38" text-anchor="middle" fill="#4a5a78" font-size="14">claude-ops — Claude Code operations</text>
 
   <!-- Foreground text — cividis-accented -->
   <g fill="#d4d8dd" xml:space="preserve">
@@ -24,7 +23,7 @@
       <tspan fill="#56b4e9"> [Opus 4.7 </tspan>
       <tspan fill="#009e73">high</tspan>
       <tspan fill="#56b4e9">]</tspan>
-      <tspan fill="#d4d8dd"> project </tspan>
+      <tspan fill="#d4d8dd"> api-service </tspan>
       <tspan fill="#8a8a94">git:(</tspan>
       <tspan fill="#fee838">main</tspan>
       <tspan fill="#8a8a94">) │ ⏱ 23m</tspan>
@@ -66,7 +65,7 @@
       <tspan fill="#4a5a78"> │ </tspan>
       <tspan fill="#f0e442">burn:211t/m</tspan>
       <tspan fill="#8a8a94">  18calls  </tspan>
-      <tspan fill="#56b4e9">$1.4</tspan>
+      <tspan fill="#56b4e9">$1.40</tspan>
       <tspan fill="#8a8a94">  </tspan>
       <tspan fill="#56b4e9">R:E</tspan>
       <tspan fill="#009e73"> 4.0</tspan>
@@ -105,8 +104,8 @@
 
     <text x="40" y="296">
       <tspan fill="#8a8a94">Guard  </tspan>
-      <tspan fill="#009e73"> ✓17/17</tspan>
-      <tspan fill="#8a8a94"> held</tspan>
+      <tspan fill="#009e73"> audit</tspan>
+      <tspan fill="#8a8a94"> 17/17 watched</tspan>
       <tspan fill="#4a5a78"> │ </tspan>
       <tspan fill="#8a8a94">last:</tspan>
       <tspan fill="#56b4e9">brevity</tspan>
@@ -130,7 +129,6 @@
       <tspan fill="#009e73">▲ safe</tspan>
     </text>
 
-    <!-- Subtle footer hint -->
-    <text x="600" y="400" text-anchor="middle" fill="#4a5a78" font-size="13">Eight lines, always visible. Every bar smoothly interpolated in Oklab. Every metric scoped to this session.</text>
+    <text x="600" y="400" text-anchor="middle" fill="#4a5a78" font-size="13">Subscription quotas, API billing, guard audit, and repair diagnostics in one local CLI.</text>
   </g>
 </svg>

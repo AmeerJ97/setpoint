@@ -9,6 +9,19 @@
 - Critical → red
 - Good/healthy → green
 
+## Accuracy Boundary
+
+The HUD is an operator overlay, not Claude Code's source of truth. Some fields
+are intentionally approximate:
+
+- Context and compaction proximity are local estimates based on visible
+  transcript/token surfaces plus the current reservation heuristic.
+- Prompt caching state is split into observed native counters and configured
+  cache policy; those signals help explain repeated billing, not exact context
+  occupancy.
+- Upstream Claude Code banners above the HUD, such as plan-level auto-mode
+  warnings, are not rendered or controlled by Claude Ops.
+
 ## Layout (Vertical Stack, 8 Lines, 80-char minimum)
 
 ```
@@ -42,33 +55,75 @@ fields read as related without adding visual weight.
 ## Line-by-Line Spec
 
 ### Line 1: Model
-Always shows: model name + effort badge, project directory, git branch,
-session duration. Git dirty indicator in yellow. Effort color: high → green,
-medium → yellow, low/default → red.
+Always shows: provider/backend badge, model name + effort badge, project
+directory, git branch, session duration. Provider identity is rendered once
+here only; Usage and Advisor do not repeat `[ANTHROPIC-*]`, `[VERTEX-AI]`,
+`[BEDROCK]`, `[GATEWAY]`, or `[FOUNDRY]` badges. Git dirty indicator in yellow.
+Persisted effort levels
+are `low`, `medium`, `high`, and `xhigh`; `max` may render only when it
+arrives from a session/env override. Effort colour over Opus 4.7:
+`high` / `xhigh` / session `max` → green, `low` / `medium` → yellow,
+`default` / unknown → red (sentinel meaning "unset"). `xhigh` is the
+Claude Code CLI default on Opus 4.7.
 
 ### Line 2: Context
-Progress bar + percentage + token breakdown + (right column) compaction
-proximity and peak-context.
+Progress bar + percentage + total/window size + compaction proximity.
 - <70%: green bar
 - 70-85%: yellow bar
 - 85%+: red bar with compaction warning in the right column
-Token breakdown (in/cache) always visible.
+Cache, native prompt-cache state, and RTK state live on the Tokens line so all
+token/cost/cache signals are adjacent instead of split across rows.
 
-### Line 3: Usage (Rate Limits)
-Both 5-hour and 7-day bars side by side, with reset timers.
+### Line 3: Usage (Billing Mode)
+Subscription mode renders both 5-hour and 7-day bars side by side, with
+reset timers. This mode is used only when Claude Code provides
+`rate_limits` in statusLine stdin.
 - <50%: green
 - 50-80%: yellow
 - 80%+: red
-If no data: dim "5h:--% | 7d:--%".
+If quota data is absent, the line switches to cost-metered mode instead
+of rendering placeholder quota rails. API/gateway/Bedrock/Vertex/Foundry
+sessions show estimated API billable session cost plus local 5h/7d spend
+references. Unknown/offline sessions use the same cost-style surface but
+keep confidence low and mark references as missing until history exists.
+
+Provider identity is intentionally absent here; the Model line owns it. Usage
+may still show authority markers that describe the measurement source:
+
+- `actual` means statusLine supplied `cost.total_cost_usd`.
+- `telem:miss` means Vertex mode is detected but no fresh,
+  context-matched provider snapshot is available.
+- `metrics` means a Vertex token-metrics snapshot exists but billing/cost
+  authority is absent, so advisor confidence remains capped.
+- `api` means the Vertex snapshot includes complete cost windows and passed
+  freshness plus project/region/model matching checks.
+
+`CLAUDE_CODE_USE_VERTEX=0|false|no|off` is treated as an explicit disable,
+even if project/region variables are inherited in the shell.
 
 Bar color is produced by `getQuotaColor(pct)` in
 `src/display/colors.js`. Thresholds: GREEN < 50, YELLOW 50–80, RED ≥ 80.
 
 ### Line 4: Tokens
-in/out tokens, cache hit%, burn rate, API call count.
+in/out tokens, native prompt-cache state, cache hit%, RTK state, burn rate,
+API call count.
 - Cache hit ≥80%: green; 50–80%: yellow; <50%: red
 - Burn rate <200 t/m: green; 200–500: yellow; >500: red
+- `native:on`, `native:write`, `native:idle`, and `native:unknown` summarize
+  Claude Code native prompt-cache counter state; suffixes such as `1h`, `5m`,
+  or `30%5m` summarize observed cache-write TTL split.
+- `cfg:off`, `cfg:5m`, and `cfg:1h` report the configured prompt-cache policy
+  separately from the observed native cache counters.
+- `cache-hist:` means the cache percentage fell back to cumulative history
+  because there were not enough recent turns for the rolling window.
+- `rtk:saving 42K↓88%`, `rtk:on`, `rtk:stale`, `rtk:off`, and `rtk:disabled`
+  report the optional RTK probe state separately from native caching. RTK is
+  shown here only; the right column does not repeat RTK command counts.
 If tracker hasn't run yet: dim placeholders.
+
+Prompt-cache policy affects repeated billing/reuse, not the logical context
+window occupancy. A `cfg:1h` label should not be described as reducing the
+headline Context percentage on its own.
 
 ### Line 5: Env
 main effort, subagent model, rules/hooks/CLAUDE.md counts, compression.
@@ -91,17 +146,27 @@ Format: `12 loaded │ brave,perplexity,sentry active`.
 Guard status, activation count, last activation, skip indicator,
 **and** the real-time R:E quality signal on the same line.
 
-- Guard running, no recent activations: green `✓ quiet`
-- Guard running, recent activation: green `✓ 4 saves │ brevity→fixed 2m`
-- Guard not running: red `✗ DOWN — run systemctl --user start claude-quality-guard`
+- Guard audit-only with drift summary: yellow `◌ AUDIT docs:4 drift / int:10 probes / skip:1`
+- Guard running, all held: green `✓17/17 │ quiet`
+- Guard running with docs-backed drift: red `✗docs:4 drift ○1 skip int:10 probes`
+- Guard disabled: red `✗ DISABLED docs:4 drift / int:10 probes — run claude-ops guard mode audit|enforce`
+- Guard not running and not audit-only: red `✗ DOWN — run systemctl --user start claude-ops-guard`
 - Quality segment: `R:E {ratio} ({reads}r/{edits}e) {status}`
   - ≥ 3.0: green "healthy"
   - 2.0–3.0: yellow "shallow"
   - < 2.0: red "edit-first"
   - No edits yet: dim "R:E --"
 
-Guard log is read from `/tmp/claude-quality-guard.log`. R:E counts
-come from transcript tool-use aggregation for the current session.
+Guard log is read from `~/.claude/plugins/claude-ops/guard.log`. Category
+state is derived from `claude-ops guard status`: documented/hybrid categories
+are separated from internal experimental GrowthBook probes in the drilldown.
+The HUD uses documented control drift for red/error posture; internal
+GrowthBook-only rows are labelled as probes unless a future pass promotes them
+to a documented/hybrid control.
+Service posture is explicit: `audit` means installed but inactive, `enforce`
+means the guard service is actively running or enabled for startup, and
+`disabled` means the guard-disabled flag is set and the service is stopped.
+R:E counts come from transcript tool-use aggregation for the current session.
 
 Critical R:E threshold (< 1.0) only fires as a separate anomaly alert
 for Opus models, based on findings from
@@ -122,6 +187,9 @@ Advisor 5h ▕██▓─────────────▏ 62→78  │ T
 - Row 1 carries the primary (more-pressing) window + action badge + salience segment.
 - Row 2 carries the other window + trailing warn badge.
 - Narrow mode collapses to a single row (badge + warn only).
+- API/Vertex mode does not repeat provider identity or detailed telemetry
+  failure text here. Provider identity belongs to Model; Vertex API-cost
+  authority belongs to Usage; Advisor carries the action and confidence.
 - Critical anomalies take over the whole line (single row, red).
 - Green `▲ safe` — increase effort or use Opus
 - Dim `── nominal`
@@ -147,8 +215,14 @@ Lines wider than the terminal wrap at separator boundaries (see
 `wrapLineToWidth` in `src/display/text.js`). A prior two-column layout was
 removed after it proved brittle in the Claude Code statusLine subprocess
 environment (no TTY, unreliable width detection) — the breakdown data that
-once lived in a right column now surfaces via the `setpoint context` CLI
-(2D bucket grid) and the drilldown lines inside `setpoint guard status`.
+once lived in a right column now surfaces via the `claude-ops context` CLI
+(2D bucket grid), the drilldown lines inside `claude-ops guard status`,
+and the docs-aligned validator inside `claude-ops guard validate`.
+
+Plain/no-color/non-TTY output is a first-class render mode. HUD rows must not
+emit ANSI escapes when color support resolves to `none`, and
+`CLAUDE_OPS_PLAIN=1` must downgrade gauge, separator, arrow, and status glyphs
+to ASCII for logs, CI, and constrained terminals.
 
 ## Narrow Terminal Handling (< 100 chars)
 

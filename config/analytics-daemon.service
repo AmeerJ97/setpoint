@@ -1,5 +1,5 @@
 [Unit]
-Description=Claude HUD Analytics Daemon
+Description=Claude Ops Analytics Daemon
 After=network.target
 
 [Service]
@@ -7,6 +7,12 @@ Type=simple
 ExecStart=/usr/bin/node {{INSTALL_DIR}}/src/analytics/daemon.js
 Restart=on-failure
 RestartSec=5
+Nice=10
+CPUQuota=10%
+IOSchedulingClass=idle
+Environment=CLAUDE_OPS_ANALYTICS_POLL_MS=30000
+Environment=CLAUDE_OPS_RTK_POLL_MS=300000
+Environment=CLAUDE_OPS_ANALYTICS_IDLE_EXIT_MS=120000
 
 [Install]
 WantedBy=default.target

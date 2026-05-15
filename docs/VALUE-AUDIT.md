@@ -6,7 +6,7 @@
 **Conventions:**
 - "stdin" = JSON piped into the HUD by Claude Code's `statusLine.command`
 - "JSONL" = the active session transcript at `~/.claude/projects/<slug>/<session-id>.jsonl`
-- "history" = `~/.claude/plugins/claude-hud/usage-history.jsonl`
+- "history" = `~/.claude/plugins/claude-ops/usage-history.jsonl`
 - File:line references are absolute paths from the project root
 
 ---
@@ -16,7 +16,7 @@
 | Displayed | Source | Formula / file | Failure mode |
 |---|---|---|---|
 | Model name (`Opus 4.7`) | `stdin.model.display_name` ‖ derived from `model.id` | `src/data/stdin.js:128` `getModelName()` — falls back to Bedrock parsing for inference profile ARNs | None significant. |
-| Effort badge (`high`) | `process.env.CLAUDE_CODE_EFFORT` ‖ `~/.claude/settings.json:effortLevel` ‖ `'high'` default | `src/hud/renderer.js:238` `detectEffort()` | Stale if user changed effort via `/effort` slash command without restarting Claude Code — slash command writes settings.json so this is OK; but **doesn't know about `xhigh`** added in 2.1.111. New tier shows up as raw `xhigh` string but isn't classified. |
+| Effort badge (`high`) | `CLAUDE_CODE_EFFORT_LEVEL` / legacy effort envs ‖ `~/.claude/settings.json:effortLevel` ‖ `'high'` default | `src/hud/renderer.js` `detectEffort()` | Current behavior recognizes `xhigh`; `max` is session/env-only and is not persisted by Claude Ops. |
 | Project path | `stdin.cwd` | direct | None. |
 | Git branch | `git status --porcelain=v2 --branch` | `src/collectors/git.js` | None significant. |
 | Session duration | `Date.now() - transcript.sessionStart` | `src/hud/renderer.js:109` | None. |
@@ -50,12 +50,12 @@
 | Displayed | Source | Formula | Failure mode |
 |---|---|---|---|
 | `in:42K out:9.5K` | `tokenStats.totalInput` / `totalOutput` | `src/hud/renderer.js:190` `augmentTokenStats()` takes `Math.max(cached, stdin)` per field | The "cached" side comes from the analytics daemon's per-session JSON; stdin gives current turn. `Math.max` is a heuristic that prevents stdin from dragging a stale cache backwards but doesn't reconcile per-turn vs cumulative semantics. Acceptable. |
-| `cache: 69%` | `cacheRead / (cacheCreate + cacheRead)` over **session lifetime** | `src/display/lines/tokens.js:38` | **Session-cumulative dilutes the signal.** A bad cache run early in the session is masked by an hour of good cache reads later. The point of monitoring cache % is to catch *current* regressions (#46829). **Fix:** rolling 10-turn window. Also add **TTL split overlay** (`5m: 80% / 1h: 20%`) so #46829-style silent regression to 5m TTL is visible. |
-| `burn: 211t/m` | `freshOutput / durationMin` | `src/hud/renderer.js:218` | **Output-only.** A turn that reads a 100K-token codebase with minimal output shows near-zero burn. But it cost real quota (input + cache_create are billed). **Fix:** weight by per-MTok price for the active model and report a cost-relevance burn rate. Also add EWMA smoothing (α=0.2) so single bursty turns don't dominate. |
+| `cache: 69%` / `cache-hist: 69%` | Rolling recent-turn cache read ratio, with cumulative fallback | `src/display/lines/tokens.js` `computeCachePercent()` | **Phase fix landed.** Rolling 10-turn data owns the normal `cache:` label. `cache-hist:` is shown only when recent-turn data is insufficient and the value is cumulative history. TTL split overlay (`5m only`, `1h only`, `5m:30%/1h:70%`) makes #46829-style silent TTL regressions visible. |
+| `burn: 211t/m` | price-weighted token components / duration, EWMA smoothed | `src/analytics/cost.js` `costWeightedBurnRate()` / `ewmaBurnRate()` | Phase 1.2 fix landed: input, output, cache writes, and cache reads are weighted by model pricing before display continuity rescaling. |
 | `18 calls` | `tokenStats.apiCalls` | analytics daemon | None. |
 | `~$0.42` | `(input + output) / 1e6 × pricing` | `src/analytics/cost.js:63` `calculateCost()` — **explicitly excludes cache_create and cache_read** | **Documentation gap, not a bug.** The cost.js comment explains why caches are excluded (Pro/Max users don't pay per-token, cache_read is cumulative and balloons). Acceptable as designed but the user should know "cost" here = generation only. |
 | `R:E 4.2 (28r/7e)` | `tools.Read / tools.Edit` from transcript | `src/anomaly/constants.js:59` | OK. Threshold-correlated to anomaly rules. |
-| `rtk:42K↓88%` | RTK cache stats | `src/collectors/rtk-reader.js` | None. |
+| `rtk:42K↓88%` | RTK cache stats | `src/collectors/rtk-reader.js` | First-class Tokens-line indicator only. The right column no longer repeats RTK command count, avoiding a second ambiguous RTK surface. |
 
 ---
 
@@ -81,11 +81,13 @@
 
 | Displayed | Source | Formula | Failure mode |
 |---|---|---|---|
-| `✓17/17 held` | `categoryOrder().length` from `loadDefaults().guard.categories` — `guard.skippedCount` | `src/display/lines/guard.js` (`categoryOrder()` helper) | **Phase 1.5 fix landed.** The count is read from `config/defaults.json` at render time; adding or removing a category updates the display without a code change. |
-| `last:brevity 2m` | `/tmp/claude-quality-guard.log` tail | `src/collectors/guard-reader.js` | OK. |
+| `docs:4 drift / int:10 probes / skip:1` | `readGuardStatus().categorySummary` canonical presentation summary | `src/collectors/guard-reader.js` + `src/guard/guard-validation.js` | **Phase fix landed.** HUD red posture is based on documented/hybrid control drift, while internal GrowthBook-only rows are labelled probes. This prevents raw internal category drift from being advertised as official guard failure. |
+| `last:brevity 2m` | `~/.claude/plugins/claude-ops/guard.log` tail | `src/collectors/guard-reader.js` | OK. |
 | `↻4 today` | log scan | OK. |
 
-**Per-category drift** is invisible. The brief recommends a 17-glyph ribbon (one block char per category). Implemented in Phase 5.
+**Service authority fix:** Guard running state comes from `systemctl --user is-active claude-ops-guard.service`; process-name matches are no longer treated as authoritative because they produced false positives from command/test processes.
+
+**Per-category ribbon** remains useful for internal probe heat, but the text inventory now separates docs-backed drift from internal probe drift.
 
 ---
 
@@ -113,9 +115,9 @@
 | Sonnet 4.5 | $3 | $15 | $3.75 | $6 | $0.30 |
 | Haiku 4.5 | $1 | $5 | $1.25 | $2 | $0.10 |
 
-**Implications for the displayed `~$0.42` cost figure:**
+**Implications for displayed cost figures:**
 - Pre-Phase 1.1, Opus 4.7 sessions were over-reporting cost by **3×** (config said $15/$75; actual is $5/$25). Anyone tuning behavior off the displayed cost was working from a number 3× too high.
-- The cost figure is still generation-only (input + output, cache excluded). That design choice is correct — see `src/analytics/cost.js` comment block.
+- Subscription/reference cost is still generation-only (input + output, cache excluded). API-mode billable estimates are separate and include input, output, cache writes, and cache reads.
 
 **Other notes from the live pricing page:**
 - Opus 4.7 uses a **35% larger tokenizer** for the same fixed text (Anthropic note). The displayed `in:` and `out:` token counts will appear inflated vs. older Opus runs, but the cost numbers are correct because rates dropped proportionally.

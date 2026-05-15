@@ -1,0 +1,34 @@
+{
+  "brevity": [{ "path": ["cachedGrowthBookFeatures", "tengu_swann_brevity"], "target": "" }],
+  "quiet": [
+    { "path": ["cachedGrowthBookFeatures", "tengu_sotto_voce"], "target": false },
+    { "path": ["cachedGrowthBookFeatures", "quiet_fern"], "target": false },
+    { "path": ["cachedGrowthBookFeatures", "quiet_hollow"], "target": false }
+  ],
+  "summarize": [{ "path": ["cachedGrowthBookFeatures", "tengu_summarize_tool_results"], "target": false }],
+  "maxtokens": [{ "path": ["cachedGrowthBookFeatures", "tengu_amber_wren", "maxTokens"], "target": 128000 }],
+  "truncation": [
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "global"], "target": 500000 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "Bash"], "target": 500000 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "PowerShell"], "target": 500000 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "Grep"], "target": 500000 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "Snip"], "target": 500000 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "StrReplaceBasedEditTool"], "target": 500000 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_pewter_kestrel", "BashSearchTool"], "target": 500000 }
+  ],
+  "refresh_ttl": [
+    { "path": ["cachedGrowthBookFeatures", "tengu_willow_refresh_ttl_hours"], "target": 8760 },
+    { "path": ["cachedGrowthBookFeatures", "tengu_willow_census_ttl_hours"], "target": 8760 }
+  ],
+  "mcp_connect": [{ "path": ["cachedGrowthBookFeatures", "tengu_claudeai_mcp_connectors"], "target": false }],
+  "bridge": [{ "path": ["bridge", "enabled"], "target": false }],
+  "grey_step": [{ "path": ["cachedGrowthBookFeatures", "tengu_grey_step"], "target": false }],
+  "grey_step2": [{ "path": ["cachedGrowthBookFeatures", "tengu_grey_step2", "enabled"], "target": false }],
+  "grey_wool": [{ "path": ["cachedGrowthBookFeatures", "tengu_grey_wool"], "target": false }],
+  "thinking": [{ "path": ["cachedGrowthBookFeatures", "tengu_crystal_beam", "budgetTokens"], "target": 128000 }],
+  "willow_mode": [{ "path": ["cachedGrowthBookFeatures", "tengu_willow_mode"], "target": "" }],
+  "compact_max": [{ "path": ["cachedGrowthBookFeatures", "tengu_sm_compact_config", "maxTokens"], "target": 200000 }],
+  "compact_init": [{ "path": ["cachedGrowthBookFeatures", "tengu_sm_config", "minimumMessageTokensToInit"], "target": 500000 }],
+  "tool_persist": [{ "path": ["cachedGrowthBookFeatures", "tengu_tool_result_persistence"], "target": true }],
+  "chomp": [{ "path": ["cachedGrowthBookFeatures", "tengu_chomp_inflection"], "target": true }]
+}

@@ -12,7 +12,7 @@ fundamental issues:
 5. No advisory system
 6. Horizontal layout breaks on narrow terminals
 
-claude-hud is a proper production tool that replaces it entirely.
+claude-ops is a proper production tool that replaces it entirely.
 
 ## Why Node.js ESM, not TypeScript
 

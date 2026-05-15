@@ -1,5 +1,5 @@
-import { readlinkSync, readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { readlinkSync, readFileSync, openSync, closeSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 /**
  * Get the current terminal width.
@@ -46,14 +46,18 @@ function widthFromParentTty() {
         ?? safeReadlink(`/proc/${pid}/fd/1`)
         ?? safeReadlink(`/proc/${pid}/fd/2`);
       if (ttyPath && /^\/dev\/(pts\/\d+|tty\w*)$/.test(ttyPath)) {
-        const out = execSync(`stty size < ${ttyPath}`, {
-          stdio: ['ignore', 'pipe', 'ignore'],
+        const ttyFd = openSync(ttyPath, 'r');
+        const result = spawnSync('stty', ['size'], {
+          stdio: [ttyFd, 'pipe', 'pipe'],
           timeout: 500,
           encoding: 'utf8',
         });
-        const parts = out.trim().split(/\s+/);
-        const cols = Number.parseInt(parts[1], 10);
-        if (Number.isFinite(cols) && cols > 0) return cols;
+        closeSync(ttyFd);
+        if (result.status === 0 && result.stdout) {
+          const parts = result.stdout.trim().split(/\s+/);
+          const cols = Number.parseInt(parts[1], 10);
+          if (Number.isFinite(cols) && cols > 0) return cols;
+        }
       }
       pid = getParentPid(pid);
     }

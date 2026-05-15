@@ -10,7 +10,7 @@ import { writeFileSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const SANDBOX = mkdtempSync(join(tmpdir(), 'setpoint-scanner-'));
+const SANDBOX = mkdtempSync(join(tmpdir(), 'claude-ops-scanner-'));
 process.env.CLAUDE_CONFIG_DIR = join(SANDBOX, '.claude');
 
 // Import *after* the env var is set so paths.js captures the sandbox.

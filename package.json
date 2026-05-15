@@ -1,18 +1,48 @@
 {
-  "name": "setpoint",
+  "name": "claude-ops",
   "version": "1.0.0",
-  "description": "Setpoint keeps your Claude Code configuration at the values it was meant to have — statusLine HUD, GrowthBook guard, analytics, anomaly detector, health auditor, daily advisor.",
+  "description": "Claude Ops keeps your Claude Code configuration at the values it was meant to have — statusLine HUD, GrowthBook guard, analytics, anomaly detector, health auditor, daily advisor.",
   "type": "module",
-  "main": "src/hud/renderer.js",
+  "main": "src/cli/index.js",
   "bin": {
-    "setpoint": "src/cli/index.js"
+    "claude-ops": "src/cli/index.js"
   },
   "scripts": {
-    "start": "node src/hud/renderer.js",
+    "start": "node src/cli/index.js",
     "test": "node --test --test-reporter=spec",
+    "test:guard": "node --test --test-reporter=spec src/cli/guard-status.test.js src/cli/guard-validate.test.js src/cli/guard-mode.test.js src/cli/guard-repair.test.js src/guard/guard-validation.test.js src/guard/vertex-config.test.js src/health/checks/guard-drift.test.js src/display/lines/guard.test.js src/collectors/guard-reader.test.js && cargo test --manifest-path src/guard/rust/Cargo.toml && bats src/guard/guard-bash.bats",
+    "test:rust": "cargo test --manifest-path src/guard/rust/Cargo.toml",
+    "check:syntax": "bash -n scripts/*.sh src/guard/*.sh",
+    "smoke:install": "tmp=$(mktemp -d) && CLAUDE_CONFIG_DIR=\"$tmp/.claude\" CLAUDE_OPS_SYSTEMD_USER_DIR=\"$tmp/systemd\" CLAUDE_OPS_BIN_DIR=\"$tmp/bin\" CLAUDE_OPS_SKIP_SYSTEMCTL=1 node src/cli/index.js repair --apply >/dev/null && CLAUDE_CONFIG_DIR=\"$tmp/.claude\" CLAUDE_OPS_SYSTEMD_USER_DIR=\"$tmp/systemd\" CLAUDE_OPS_BIN_DIR=\"$tmp/bin\" CLAUDE_OPS_SKIP_SYSTEMCTL=1 node src/cli/index.js guard repair --apply >/dev/null && CLAUDE_CONFIG_DIR=\"$tmp/.claude\" CLAUDE_OPS_SYSTEMD_USER_DIR=\"$tmp/systemd\" CLAUDE_OPS_BIN_DIR=\"$tmp/bin\" CLAUDE_OPS_SKIP_SYSTEMCTL=1 node src/cli/index.js doctor --json >/dev/null && CLAUDE_CONFIG_DIR=\"$tmp/.claude\" CLAUDE_OPS_SYSTEMD_USER_DIR=\"$tmp/systemd\" CLAUDE_OPS_BIN_DIR=\"$tmp/bin\" CLAUDE_OPS_SKIP_SYSTEMCTL=1 node src/cli/index.js guard validate --strict --json >/dev/null",
+    "pack:check": "npm pack --dry-run --json",
     "health": "node src/health/index.js",
     "advisor": "node src/advisor/index.js"
   },
+  "files": [
+    "src/**/*.js",
+    "src/**/*.json",
+    "src/**/*.md",
+    "src/**/*.sh",
+    "src/guard/rust/Cargo.toml",
+    "src/guard/rust/Cargo.lock",
+    "src/guard/rust/src/**/*.rs",
+    "!src/**/*.test.js",
+    "!src/guard/rust/target/**",
+    "config/",
+    "docs/assets/",
+    "docs/ADVISOR-CLASSIFIER.md",
+    "docs/ANALYTICS-SPEC.md",
+    "docs/AUTO-EFFORT.md",
+    "docs/DESIGN.md",
+    "docs/HOOKS.md",
+    "docs/HUD-SPEC.md",
+    "scripts/",
+    "tests/fixtures/",
+    "README.md",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "LICENSE"
+  ],
   "keywords": [
     "claude-code",
     "statusline",
@@ -24,12 +54,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AmeerJ97/setpoint.git"
+    "url": "git+https://github.com/AmeerJ97/claude-ops.git"
   },
   "bugs": {
-    "url": "https://github.com/AmeerJ97/setpoint/issues"
+    "url": "https://github.com/AmeerJ97/claude-ops/issues"
   },
-  "homepage": "https://github.com/AmeerJ97/setpoint#readme",
+  "homepage": "https://github.com/AmeerJ97/claude-ops#readme",
   "engines": {
     "node": ">=18.0.0"
   }

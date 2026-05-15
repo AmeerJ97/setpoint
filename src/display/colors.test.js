@@ -6,6 +6,8 @@ import {
   getBurnColor,
   getCacheColor,
   getEffortColor,
+  getStateColor,
+  RESET,
   setColorMode,
 } from './colors.js';
 
@@ -52,9 +54,21 @@ test('getCacheColor: inverse of quota — green high, red low', () => {
 });
 
 test('getEffortColor', () => {
+  // Opus 4.7 five-rung ladder: low / medium / high / xhigh / max
+  // high / xhigh / max → green (ok — plenty of reasoning budget)
+  // low / medium     → yellow (warn — reduced reasoning)
+  // default / unknown → red (critical — sentinel meaning "unset")
   assert.equal(getEffortColor('high'), GREEN);
+  assert.equal(getEffortColor('xhigh'), GREEN);
   assert.equal(getEffortColor('max'), GREEN);
   assert.equal(getEffortColor('medium'), YELLOW);
-  assert.equal(getEffortColor('low'), RED);
+  assert.equal(getEffortColor('low'), YELLOW);
   assert.equal(getEffortColor('default'), RED);
+  assert.equal(getEffortColor('?'), RED);
+});
+
+test('mode none suppresses qualitative colors and resets', () => {
+  setColorMode('none', 'cividis');
+  assert.equal(getStateColor('critical', RED), '');
+  assert.equal(`${RESET}`, '');
 });

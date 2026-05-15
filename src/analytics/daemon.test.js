@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { analyzeSession } from './daemon.js';
+import { analyzeSession, shouldExitForIdle } from './daemon.js';
 
 function makeFixture(turns) {
-  const dir = mkdtempSync(join(tmpdir(), 'claude-hud-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'claude-ops-test-'));
   const path = join(dir, 'session.jsonl');
   const lines = turns.map(t => JSON.stringify(t));
   writeFileSync(path, lines.join('\n'));
@@ -76,4 +76,37 @@ test('peakContext includes cache_create in the per-turn sum', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('shouldExitForIdle exits only after idle grace elapses', () => {
+  assert.equal(shouldExitForIdle({
+    activeCount: 0,
+    idleSince: 1_000,
+    now: 5_000,
+    idleExitMs: 10_000,
+  }), false);
+
+  assert.equal(shouldExitForIdle({
+    activeCount: 0,
+    idleSince: 1_000,
+    now: 11_000,
+    idleExitMs: 10_000,
+  }), true);
+});
+
+test('shouldExitForIdle stays alive while sessions are active or keepalive is set', () => {
+  assert.equal(shouldExitForIdle({
+    activeCount: 1,
+    idleSince: 1_000,
+    now: 20_000,
+    idleExitMs: 10_000,
+  }), false);
+
+  assert.equal(shouldExitForIdle({
+    activeCount: 0,
+    idleSince: 1_000,
+    now: 20_000,
+    idleExitMs: 10_000,
+    keepAlive: true,
+  }), false);
 });

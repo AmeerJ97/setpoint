@@ -1,15 +1,15 @@
 /**
  * Line 6: Env — main:medium | sub:sonnet | 13r 7h 2md | UNCOMP
  */
-import { dim, getEffortColor, green, red, yellow, cyan, RESET } from '../colors.js';
+import { dim, bold, getEffortColor, green, red, yellow, cyan, RESET } from '../colors.js';
 import { padLabel } from '../format.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { getClaudeConfigDir, getClaudeJsonPath } from '../../data/paths.js';
 
 function readTeammateModel() {
   try {
-    const d = JSON.parse(readFileSync(join(homedir(), '.claude.json'), 'utf8'));
+    const d = JSON.parse(readFileSync(getClaudeJsonPath(), 'utf8'));
     return d.teammateDefaultModel || 'opus';
   } catch { return '?'; }
 }
@@ -26,19 +26,23 @@ export function renderEnvLine(ctx) {
   const SOFT = ` ${dim('·')} `;
 
   // Main thread effort — use ctx.effort which comes from detectEffort() in the main renderer
-  // ctx.effort should be 'low', 'medium', or 'high' — NOT a model name string
+  // ctx.effort should be one of Opus 4.7's five rungs (low/medium/high/xhigh/max)
+  // or the Claude Code CLI's `default` sentinel — NOT a model name string.
   let effort = ctx.effort ?? 'unknown';
   // Sanitize: if effort somehow contains non-effort text, fall back to reading settings.json
-  if (!['low', 'medium', 'high', 'default'].includes(effort)) {
+  if (!['low', 'medium', 'high', 'xhigh', 'max', 'default'].includes(effort)) {
     try {
-      const settings = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8'));
+      const settings = JSON.parse(readFileSync(join(getClaudeConfigDir(), 'settings.json'), 'utf8'));
       effort = settings.effortLevel || 'default';
     } catch {
       effort = '?';
     }
   }
   const effortColor = getEffortColor(effort);
-  const mainSeg = `${cyan('main')}:${effortColor}${effort}${RESET}`;
+  // When the auto-effort controller is managing effort for this
+  // session, bold the value so the reader can see the knob is live.
+  const effortText = ctx.autoEffortEnabled ? bold(effort) : effort;
+  const mainSeg = `${cyan('main')}:${effortColor}${effortText}${RESET}`;
 
   // Subagent model
   const subModel = readTeammateModel();
@@ -57,7 +61,9 @@ export function renderEnvLine(ctx) {
   const compSeg = ctx.isCompressed ? red('COMP') : green('UNCOMP');
   const n = ctx.activeSessionCount ?? 1;
   const sessionsSeg = n > 1 ? yellow(`⧉${n} sessions`) : null;
-  const stateGroup = sessionsSeg ? [compSeg, sessionsSeg].join(SOFT) : compSeg;
+  const worktreeName = ctx.stdin?.worktree?.name ?? ctx.stdin?.workspace?.git_worktree;
+  const worktreeSeg = worktreeName ? cyan(`wt:${worktreeName}`) : null;
+  const stateGroup = [compSeg, sessionsSeg, worktreeSeg].filter(Boolean).join(SOFT);
 
   const parts = [modelsGroup];
   if (countsGroup) parts.push(countsGroup);

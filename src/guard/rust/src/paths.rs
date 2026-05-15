@@ -19,13 +19,16 @@ pub struct Paths {
 impl Paths {
     pub fn new() -> Self {
         let home = env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/tmp"));
-        let claude_json = home.join(".claude.json");
-        let plugin_dir = home.join(".claude").join("plugins").join("claude-hud");
+        let claude_dir = env_path("CLAUDE_CONFIG_DIR", &home)
+            .unwrap_or_else(|| home.join(".claude"));
+        let claude_json = env_path("CLAUDE_OPS_CLAUDE_JSON_PATH", &home)
+            .unwrap_or_else(|| home.join(".claude.json"));
+        let plugin_dir = claude_dir.join("plugins").join("claude-ops");
         Self {
             disabled_flag: plugin_dir.join("guard-disabled"),
             pid_file: plugin_dir.join("guard.pid"),
             config_dir: plugin_dir.join("guard-config"),
-            log_file: PathBuf::from("/tmp/claude-quality-guard.log"),
+            log_file: plugin_dir.join("guard.log"),
             plugin_dir,
             claude_json,
             home,
@@ -37,6 +40,21 @@ impl Paths {
         std::fs::create_dir_all(&self.config_dir)?;
         Ok(())
     }
+}
+
+fn env_path(name: &str, home: &Path) -> Option<PathBuf> {
+    let raw = env::var(name).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed == "~" {
+        return Some(home.to_path_buf());
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        return Some(home.join(rest));
+    }
+    Some(PathBuf::from(trimmed))
 }
 
 /// Atomic write — write to `.tmp-XXX` next to `target`, then rename.

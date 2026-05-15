@@ -43,6 +43,10 @@ const HISTORY_WINDOW_MS = 30 * 86_400_000; // 30 days for baselining
  * @param {number|null} [options.contextPercent]
  * @param {string|null} [options.modelName]
  * @param {Array<object>} [options.history]    - inject history (tests); else read from disk
+ * @param {'max'|'api'|'bedrock'|'unknown'} [options.mode]  - session mode
+ * @param {import('../data/mode.js').RuntimeMode} [options.runtimeMode]
+ * @param {import('./api-cost.js').ApiWindowRef|null} [options.apiWindowRefs] - cost refs
+ * @param {import('./vertex-telemetry.js').VertexSyntheticTelemetry|null} [options.syntheticTelemetry]
  * @returns {Advisory}
  */
 export function computeAdvisory(rates, usageData, options = {}) {
@@ -61,6 +65,10 @@ export function computeAdvisory(rates, usageData, options = {}) {
     contextPercent: options.contextPercent ?? null,
     modelName: options.modelName ?? null,
     history,
+    mode: options.mode ?? 'max',
+    runtimeMode: options.runtimeMode ?? null,
+    apiWindowRefs: options.apiWindowRefs ?? null,
+    syntheticTelemetry: options.syntheticTelemetry ?? null,
   });
 
   return {
@@ -78,6 +86,9 @@ export function computeAdvisory(rates, usageData, options = {}) {
     estimatedSessions: sessions,
     metrics: rec.metrics,
     baselines: rec.baselines,
+    backend: rec.backend,
+    telemetryAuthority: rec.telemetryAuthority,
+    syntheticTelemetry: rec.syntheticTelemetry,
   };
 }
 
@@ -89,6 +100,9 @@ function deriveSuggestion(rec) {
     case 'hard_stop_5h':
     case 'hard_stop_7d':
     case 'limit_hit':
+    case 'vertex_quota_exhausted':
+    case 'vertex_api_missing':
+    case 'vertex_api_invalid_cost':
       return { effort: 'low', model: 'sonnet' };
     case 'model_swap':
       return { effort: 'high', model: 'sonnet' };

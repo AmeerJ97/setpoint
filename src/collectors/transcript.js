@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline';
 import { createHash } from 'node:crypto';
 import { TRANSCRIPT_CACHE_DIR } from '../data/paths.js';
 import { countReasoningReversals } from '../advisor/reversals.js';
+import { extractVertexQuotaEventsFromText } from '../analytics/vertex-telemetry.js';
 
 /**
  * @typedef {object} TranscriptData
@@ -33,7 +34,7 @@ function getCachePath(transcriptPath) {
  * @returns {Promise<TranscriptData>}
  */
 export async function parseTranscript(transcriptPath) {
-  const empty = { tools: [], agents: [], todos: [], reversalCount: 0, toolCallCount: 0 };
+  const empty = { tools: [], agents: [], todos: [], reversalCount: 0, toolCallCount: 0, cchHashMutationCount: 0, quotaEvents: [] };
   if (!transcriptPath || !existsSync(transcriptPath)) return empty;
 
   let stat;
@@ -63,6 +64,8 @@ export async function parseTranscript(transcriptPath) {
   // last 20 for display; the anomaly rule needs the full count.
   let reversalCount = 0;
   let toolCallCount = 0;
+  let cchHashMutationCount = 0;
+  const quotaEvents = [];
 
   try {
     const rl = createInterface({
@@ -72,9 +75,14 @@ export async function parseTranscript(transcriptPath) {
 
     for await (const line of rl) {
       if (!line.trim()) continue;
+      if (line.includes('cch=')) cchHashMutationCount++;
       try {
         const entry = JSON.parse(line);
         const ts = entry.timestamp ? new Date(entry.timestamp) : new Date();
+        quotaEvents.push(...extractVertexQuotaEventsFromText(line, {
+          timestamp: entry.timestamp ?? ts,
+          source: 'transcript',
+        }));
         if (!sessionStart && entry.timestamp) sessionStart = ts;
 
         if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
@@ -101,6 +109,8 @@ export async function parseTranscript(transcriptPath) {
     sessionName,
     reversalCount,
     toolCallCount,
+    cchHashMutationCount,
+    quotaEvents,
   };
 
   if (parsedCleanly) {
@@ -223,6 +233,8 @@ function serialize(data) {
     sessionName: data.sessionName,
     reversalCount: data.reversalCount ?? 0,
     toolCallCount: data.toolCallCount ?? 0,
+    cchHashMutationCount: data.cchHashMutationCount ?? 0,
+    quotaEvents: data.quotaEvents ?? [],
   };
 }
 
@@ -235,5 +247,7 @@ function deserialize(data) {
     sessionName: data.sessionName,
     reversalCount: data.reversalCount ?? 0,
     toolCallCount: data.toolCallCount ?? 0,
+    cchHashMutationCount: data.cchHashMutationCount ?? 0,
+    quotaEvents: data.quotaEvents ?? [],
   };
 }

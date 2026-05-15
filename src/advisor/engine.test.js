@@ -160,7 +160,7 @@ describe('buildRecommendation — confidence', () => {
       tokenStats: { burnRate: 100, durationMin: 30,
         recentTurnsOutput: Array(10).fill(100) },
     });
-    assert.equal(r.confidence, 'medium');
+    assert.equal(r.confidence, 'med');
   });
 
   it('high confidence on a mature session', () => {
@@ -168,8 +168,31 @@ describe('buildRecommendation — confidence', () => {
       rates: rates(),
       tokenStats: { burnRate: 100, durationMin: 90,
         recentTurnsOutput: Array(30).fill(100) },
+      history: syntheticHistory(8, 10, 100),
     });
     assert.equal(r.confidence, 'high');
+  });
+
+  it('caps mature sessions at medium confidence while baselines warm up', () => {
+    const r = buildRecommendation({
+      rates: rates(),
+      tokenStats: { burnRate: 100, durationMin: 90,
+        recentTurnsOutput: Array(30).fill(100) },
+      history: [],
+    });
+    assert.equal(r.confidence, 'med');
+    assert.match(r.confidenceWhy, /baselines/);
+  });
+
+  it('caps API sessions at low confidence because quota data is absent', () => {
+    const r = buildRecommendation({
+      rates: rates(),
+      tokenStats: { burnRate: 100, durationMin: 90,
+        recentTurnsOutput: Array(30).fill(100) },
+      mode: 'api',
+      history: syntheticHistory(8, 10, 100),
+    });
+    assert.equal(r.confidence, 'low');
   });
 });
 
@@ -201,5 +224,208 @@ describe('buildRecommendation — metrics + baselines passthrough', () => {
     });
     assert.equal(r.baselines.sufficient, true);
     assert.ok(r.baselines.burnP90 >= r.baselines.burnP50);
+  });
+});
+
+describe('buildRecommendation — API mode actions', () => {
+  it('uses burn velocity for API high-burn sessions', () => {
+    const r = buildRecommendation({
+      rates: rates(),
+      mode: 'api',
+      tokenStats: { burnRate: 400, durationMin: 60, recentTurnsOutput: Array(20).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+    });
+    assert.equal(r.tier, 'api_burn_high');
+    assert.match(r.action, /API burn hot/);
+  });
+
+  it('describes 7d API history as a reference, not a limit', () => {
+    const r = buildRecommendation({
+      rates: rates(),
+      mode: 'api',
+      tokenStats: { burnRate: 100, durationMin: 60, recentTurnsOutput: Array(20).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+      apiWindowRefs: {
+        dataMaturity: { state: 'local_reference' },
+        ref7dCostUsd: 10,
+        sessionCostPct7d: 120,
+      },
+    });
+    assert.equal(r.tier, 'api_weekly_ref_high');
+    assert.match(r.action, /reference/);
+    assert.doesNotMatch(`${r.action} ${r.causalReason}`, /limit/i);
+  });
+
+  it('raises API confidence to medium only with mature local cost history', () => {
+    const r = buildRecommendation({
+      rates: rates(),
+      mode: 'api',
+      tokenStats: { burnRate: 100, durationMin: 90, recentTurnsOutput: Array(30).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+      apiWindowRefs: {
+        dataMaturity: { state: 'local_reference', reason: 'mature' },
+      },
+    });
+    assert.equal(r.confidence, 'med');
+    assert.match(r.confidenceWhy, /local cost reference/);
+  });
+});
+
+describe('buildRecommendation — Vertex synthetic telemetry', () => {
+  it('maps Vertex RESOURCE_EXHAUSTED telemetry to a GCP quota limit hit', () => {
+    const r = buildRecommendation({
+      rates: { burnRate: 100, fiveHourDetail: null, sevenDayDetail: null },
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'local-synthetic',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        signal: 'limit_hit',
+        causalReason: 'GCP_QUOTA_EXHAUSTED',
+        latestQuotaEvent: { code: 'RESOURCE_EXHAUSTED', causalReason: 'GCP_QUOTA_EXHAUSTED' },
+        dataMaturity: { state: 'warming', reason: 'warming', samples: 1, distinctSessions: 1 },
+      },
+    });
+    assert.equal(r.tier, 'vertex_quota_exhausted');
+    assert.equal(r.signal, 'limit_hit');
+    assert.match(r.causalReason, /GCP_QUOTA_EXHAUSTED/);
+    assert.equal(r.confidence, 'med');
+  });
+
+  it('keeps Vertex headerless sessions low confidence instead of faking quota TTE', () => {
+    const r = buildRecommendation({
+      rates: { burnRate: 100, fiveHourDetail: null, sevenDayDetail: null },
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'local-synthetic',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        signal: null,
+        dataMaturity: { state: 'warming', reason: 'warming local Vertex telemetry', samples: 1, distinctSessions: 1 },
+      },
+      tokenStats: { burnRate: 100, durationMin: 90, recentTurnsOutput: Array(30).fill(100) },
+    });
+    assert.equal(r.tier, 'vertex_api_missing');
+    assert.equal(r.signal, 'throttle');
+    assert.equal(r.confidence, 'low');
+    assert.equal(r.metrics.fhTteSec, null);
+    assert.match(r.confidenceWhy, /authoritative API snapshot missing/);
+  });
+
+  it('throttles authoritative Vertex telemetry when cost fields are nonpositive for nonzero usage', () => {
+    const r = buildRecommendation({
+      rates: { burnRate: 220, fiveHourDetail: null, sevenDayDetail: null },
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'vertex-api',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        telemetryAuthority: 'vertex-api',
+        signal: null,
+        dataMaturity: { state: 'authoritative', reason: 'api snapshot', samples: 1, distinctSessions: 1 },
+        fiveHour: { totalTokens: 12000, costUsd: -0.01 },
+        sevenDay: { totalTokens: 48000, costUsd: 0 },
+      },
+      tokenStats: { burnRate: 220, durationMin: 80, recentTurnsOutput: Array(25).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+    });
+    assert.equal(r.tier, 'vertex_api_invalid_cost');
+    assert.equal(r.signal, 'throttle');
+    assert.equal(r.confidence, 'low');
+    assert.match(r.causalReason, /nonpositive.*cost_usd/);
+    assert.match(r.confidenceWhy, /nonpositive.*cost_usd/);
+  });
+
+  it('treats authoritative zero-usage vertex snapshots as non-actionable and throttles', () => {
+    const r = buildRecommendation({
+      rates: { burnRate: 90, fiveHourDetail: null, sevenDayDetail: null },
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'vertex-api',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        telemetryAuthority: 'vertex-api',
+        signal: null,
+        dataMaturity: { state: 'authoritative', reason: 'api snapshot', samples: 1, distinctSessions: 1 },
+        fiveHour: { totalTokens: 0, costUsd: 0 },
+        sevenDay: { totalTokens: 0, costUsd: 0 },
+      },
+      tokenStats: { burnRate: 90, durationMin: 95, recentTurnsOutput: Array(30).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+    });
+    assert.equal(r.confidence, 'low');
+    assert.equal(r.tier, 'vertex_api_missing');
+    assert.equal(r.signal, 'throttle');
+    assert.match(r.causalReason, /zero total_tokens/);
+  });
+
+  it('treats authoritative negative cost as invalid even with zero usage', () => {
+    const r = buildRecommendation({
+      rates: { burnRate: 90, fiveHourDetail: null, sevenDayDetail: null },
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'vertex-api',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        telemetryAuthority: 'vertex-api',
+        signal: null,
+        dataMaturity: { state: 'authoritative', reason: 'api snapshot', samples: 1, distinctSessions: 1 },
+        fiveHour: { totalTokens: 0, costUsd: -0.1 },
+        sevenDay: { totalTokens: 0, costUsd: -0.2 },
+      },
+      tokenStats: { burnRate: 90, durationMin: 95, recentTurnsOutput: Array(30).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+    });
+    assert.equal(r.confidence, 'low');
+    assert.equal(r.tier, 'vertex_api_invalid_cost');
+    assert.equal(r.signal, 'throttle');
+    assert.match(r.causalReason, /nonpositive.*cost_usd/);
+  });
+
+  it('treats authoritative vertex-api telemetry as high confidence when mature', () => {
+    const r = buildRecommendation({
+      rates: { burnRate: 240, fiveHourDetail: null, sevenDayDetail: null },
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'vertex-api',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        telemetryAuthority: 'vertex-api',
+        signal: null,
+        dataMaturity: { state: 'authoritative', reason: 'api snapshot', samples: 1, distinctSessions: 1 },
+        fiveHour: { totalTokens: 12000, costUsd: 4.2 },
+        sevenDay: { totalTokens: 48000, costUsd: 18.3 },
+      },
+      tokenStats: { burnRate: 240, durationMin: 95, recentTurnsOutput: Array(30).fill(100) },
+      history: syntheticHistory(8, 10, 100),
+    });
+    assert.equal(r.confidence, 'high');
+    assert.equal(r.tier, 'vertex_burn_high');
+    assert.equal(r.signal, 'reduce');
+    assert.match(r.causalReason, /authoritative Vertex burn/);
   });
 });

@@ -19,10 +19,36 @@
     "reset": "\u001b[0m"
   },
   "analytics": {
-    "historyFile": "~/.claude/plugins/claude-hud/usage-history.jsonl",
+    "historyFile": "~/.claude/plugins/claude-ops/usage-history.jsonl",
     "writeIntervalSec": 300,
     "rollingWindowHours": 5,
     "rollingWindowDays": 7
+  },
+  "telemetry": {
+    "apiRefs": {
+      "minSamples": 3,
+      "minDistinctSessions": 2,
+      "minOldestAgeMinutes": 30
+    },
+    "vertexSynthetic": {
+      "minSamples": 3,
+      "minDistinctSessions": 2,
+      "minOldestAgeMinutes": 30
+    },
+    "vertexApi": {
+      "maxSnapshotAgeMinutes": 20
+    }
+  },
+  "hooks": {
+    "mode": "advisory",
+    "preCompactSnapshots": false
+  },
+  "experimental": {
+    "scan": false,
+    "consolidate": false
+  },
+  "budget": {
+    "weeklyUsd": null
   },
   "advisor": {
     "thresholds": {
@@ -35,14 +61,17 @@
   "pricing": {
     "defaultModel": "claude-opus-4-7",
     "dataResidencyMultiplier": 1.0,
+    "source": "https://docs.claude.com/en/docs/about-claude/pricing",
+    "retrievedAt": "2026-05-13",
+    "currency": "USD",
     "models": {
-      "claude-opus-4-7":   { "input": 5.00, "output": 25.00, "cacheCreate5m": 6.25, "cacheCreate1h": 10.00, "cacheRead": 0.50 },
-      "claude-opus-4-6":   { "input": 5.00, "output": 25.00, "cacheCreate5m": 6.25, "cacheCreate1h": 10.00, "cacheRead": 0.50 },
-      "claude-opus-4-5":   { "input": 5.00, "output": 25.00, "cacheCreate5m": 6.25, "cacheCreate1h": 10.00, "cacheRead": 0.50 },
-      "claude-opus-4-1":   { "input": 15.00, "output": 75.00, "cacheCreate5m": 18.75, "cacheCreate1h": 30.00, "cacheRead": 1.50 },
-      "claude-sonnet-4-6": { "input": 3.00, "output": 15.00, "cacheCreate5m": 3.75, "cacheCreate1h": 6.00, "cacheRead": 0.30 },
-      "claude-sonnet-4-5": { "input": 3.00, "output": 15.00, "cacheCreate5m": 3.75, "cacheCreate1h": 6.00, "cacheRead": 0.30 },
-      "claude-haiku-4-5":  { "input": 1.00, "output":  5.00, "cacheCreate5m": 1.25, "cacheCreate1h": 2.00, "cacheRead": 0.10 }
+      "claude-opus-4-7":   { "input": 5.00, "output": 25.00, "cacheCreate5m": 6.25, "cacheCreate1h": 10.00, "cacheRead": 0.50, "source": "local-model-map" },
+      "claude-opus-4-6":   { "input": 5.00, "output": 25.00, "cacheCreate5m": 6.25, "cacheCreate1h": 10.00, "cacheRead": 0.50, "source": "local-model-map" },
+      "claude-opus-4-5":   { "input": 5.00, "output": 25.00, "cacheCreate5m": 6.25, "cacheCreate1h": 10.00, "cacheRead": 0.50, "source": "https://docs.claude.com/en/docs/about-claude/pricing" },
+      "claude-opus-4-1":   { "input": 15.00, "output": 75.00, "cacheCreate5m": 18.75, "cacheCreate1h": 30.00, "cacheRead": 1.50, "source": "https://docs.claude.com/en/docs/about-claude/pricing" },
+      "claude-sonnet-4-6": { "input": 3.00, "output": 15.00, "cacheCreate5m": 3.75, "cacheCreate1h": 6.00, "cacheRead": 0.30, "source": "local-model-map" },
+      "claude-sonnet-4-5": { "input": 3.00, "output": 15.00, "cacheCreate5m": 3.75, "cacheCreate1h": 6.00, "cacheRead": 0.30, "source": "https://docs.claude.com/en/docs/about-claude/pricing" },
+      "claude-haiku-4-5":  { "input": 1.00, "output":  5.00, "cacheCreate5m": 1.25, "cacheCreate1h": 2.00, "cacheRead": 0.10, "source": "https://docs.claude.com/en/docs/about-claude/pricing" }
     }
   },
   "rates": {
@@ -61,26 +90,26 @@
     }
   },
   "guard": {
-    "logFile": "/tmp/claude-quality-guard.log",
-    "serviceName": "claude-quality-guard",
+    "logFile": "~/.claude/plugins/claude-ops/guard.log",
+    "serviceName": "claude-ops-guard",
     "categories": {
       "brevity": "Prevents brevity enforcer from shortening responses",
       "quiet": "Disables quiet modes that suppress tool output",
       "summarize": "Prevents tool result compression/summarization",
       "maxtokens": "Sets max output tokens to 128K",
       "truncation": "Sets tool output truncation cap to 500K (every per-tool subkey)",
-      "refresh_ttl": "Extends refresh TTL to 1 year",
-      "mcp_connect": "Disables cloud MCP connectors",
-      "bridge": "Disables Claude Desktop bridge",
-      "grey_step": "Disables effort reducer v1",
-      "grey_step2": "Disables medium effort override",
-      "grey_wool": "Disables effort reducer v3",
+      "refresh_ttl": "Audits prompt cache enablement and documented 1-hour TTL request",
+      "mcp_connect": "Audits Claude.ai MCP server policy and Vertex tool-search compatibility",
+      "bridge": "Tracks internal Claude Desktop bridge disable flag",
+      "grey_step": "Tracks internal effort reducer v1 flag",
+      "grey_step2": "Tracks internal medium effort override flag",
+      "grey_wool": "Tracks internal effort reducer v3 flag",
       "thinking": "Restores thinking budget to 128K (Opus 4.6 and earlier only; auto-skipped on install because Opus 4.7 rejects thinking.budget_tokens with a 400)",
-      "willow_mode": "Disables capability downgrade mode",
-      "compact_max": "Sets compaction survival to 200K tokens",
-      "compact_init": "Sets compaction trigger to 500K tokens",
-      "tool_persist": "Preserves tool results across compaction",
-      "chomp": "Enables adaptive processing"
+      "willow_mode": "Tracks internal capability downgrade-mode flag",
+      "compact_max": "Audits documented compaction controls and internal compact max target",
+      "compact_init": "Audits documented compaction controls and internal trigger target",
+      "tool_persist": "Tracks internal tool-result persistence flag",
+      "chomp": "Tracks internal adaptive-processing flag"
     }
   }
 }

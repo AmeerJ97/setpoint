@@ -49,6 +49,21 @@ function classifyLevel(current, projected) {
   return 'ok';
 }
 
+function syntheticHistory(days, samplesPerDay = 10, baseBurn = 100) {
+  const out = [];
+  const now = Date.now();
+  for (let d = days; d >= 0; d--) {
+    for (let s = 0; s < samplesPerDay; s++) {
+      out.push({
+        ts: new Date(now - d * 86_400_000 + s * 600_000).toISOString(),
+        session_burn_rate: baseBurn,
+        context_pct: 30,
+      });
+    }
+  }
+  return out;
+}
+
 describe('computeAdvisory (engine adapter)', () => {
   it('passes window levels through to the display layer', () => {
     const rates = makeRates({ fiveHourPct: 90, fhProj: 0.95, fhLevel: 'critical' });
@@ -127,8 +142,15 @@ describe('computeAdvisory (engine adapter)', () => {
     });
     assert.equal(young.confidence, 'low');
 
-    const mature = computeAdvisory(rates, null, {
+    const warming = computeAdvisory(rates, null, {
       history: [],
+      tokenStats: { burnRate: 100, durationMin: 90,
+        recentTurnsOutput: Array(30).fill(100) },
+    });
+    assert.equal(warming.confidence, 'med');
+
+    const mature = computeAdvisory(rates, null, {
+      history: syntheticHistory(8, 10, 100),
       tokenStats: { burnRate: 100, durationMin: 90,
         recentTurnsOutput: Array(30).fill(100) },
     });
@@ -153,5 +175,77 @@ describe('computeAdvisory (engine adapter)', () => {
     assert.equal(result.metrics.edits, 2);
     assert.ok(typeof result.baselines === 'object');
     assert.equal(result.baselines.sufficient, false);
+  });
+
+  it('threads Vertex synthetic quota hits through the adapter', () => {
+    const result = computeAdvisory({ burnRate: 100, fiveHourDetail: null, sevenDayDetail: null }, null, {
+      history: [],
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'local-synthetic',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        signal: 'limit_hit',
+        latestQuotaEvent: { code: 'RESOURCE_EXHAUSTED', causalReason: 'GCP_QUOTA_EXHAUSTED' },
+        dataMaturity: { state: 'warming', reason: 'warming local Vertex telemetry', samples: 1, distinctSessions: 1 },
+      },
+    });
+    assert.equal(result.signal, 'limit_hit');
+    assert.equal(result.tier, 'vertex_quota_exhausted');
+    assert.equal(result.backend, 'vertex-ai');
+    assert.equal(result.telemetryAuthority, 'local-synthetic');
+    assert.match(result.causalReason, /GCP_QUOTA_EXHAUSTED/);
+  });
+
+  it('maps invalid authoritative Vertex cost payloads to low/sonnet suggestion', () => {
+    const result = computeAdvisory({ burnRate: 100, fiveHourDetail: null, sevenDayDetail: null }, null, {
+      history: [],
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'vertex-api',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        telemetryAuthority: 'vertex-api',
+        fiveHour: { totalTokens: 1000, costUsd: 0 },
+        sevenDay: { totalTokens: 5000, costUsd: 0 },
+        dataMaturity: { state: 'authoritative', reason: 'authoritative snapshot', samples: 1, distinctSessions: 1 },
+      },
+      tokenStats: { burnRate: 100, durationMin: 90, recentTurnsOutput: Array(30).fill(1) },
+    });
+    assert.equal(result.tier, 'vertex_api_invalid_cost');
+    assert.equal(result.signal, 'throttle');
+    assert.deepEqual(result.suggestion, { effort: 'low', model: 'sonnet' });
+  });
+
+  it('maps authoritative zero-usage Vertex payloads to conservative low/sonnet suggestion', () => {
+    const result = computeAdvisory({ burnRate: 100, fiveHourDetail: null, sevenDayDetail: null }, null, {
+      history: [],
+      mode: 'api',
+      runtimeMode: {
+        backend: 'vertex-ai',
+        telemetryAuthority: 'vertex-api',
+        authProvider: 'vertex',
+        billingSignal: 'cost-metered',
+        mode: 'api',
+      },
+      syntheticTelemetry: {
+        telemetryAuthority: 'vertex-api',
+        fiveHour: { totalTokens: 0, costUsd: 0 },
+        sevenDay: { totalTokens: 0, costUsd: 0 },
+        dataMaturity: { state: 'authoritative', reason: 'authoritative snapshot', samples: 1, distinctSessions: 1 },
+      },
+      tokenStats: { burnRate: 100, durationMin: 90, recentTurnsOutput: Array(30).fill(1) },
+    });
+    assert.equal(result.tier, 'vertex_api_missing');
+    assert.equal(result.signal, 'throttle');
+    assert.deepEqual(result.suggestion, { effort: 'low', model: 'sonnet' });
   });
 });

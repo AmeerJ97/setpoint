@@ -7,9 +7,11 @@
 # python interpreter spin-up on every revert.
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
 SERVICE_DIR="$HOME/.config/systemd/user"
-PLUGIN_DIR="$HOME/.claude/plugins/claude-hud"
+SERVICE_DIR="${CLAUDE_OPS_SYSTEMD_USER_DIR:-$SERVICE_DIR}"
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+PLUGIN_DIR="$CLAUDE_DIR/plugins/claude-ops"
 GUARD_CONFIG_DIR="$PLUGIN_DIR/guard-config"
 mkdir -p "$SERVICE_DIR"
 mkdir -p "$GUARD_CONFIG_DIR"
@@ -21,15 +23,15 @@ mkdir -p "$GUARD_CONFIG_DIR"
 if [[ ! -e "$GUARD_CONFIG_DIR/thinking.skip" ]]; then
   touch "$GUARD_CONFIG_DIR/thinking.skip"
 fi
-# Tag the reason so `setpoint guard status` renders a self-documenting
+# Tag the reason so `claude-ops guard status` renders a self-documenting
 # "[opus_4_7_incompatible]" alongside the skipped row instead of leaving
 # the operator to go spelunking for "why is thinking skipped?".
 if [[ ! -e "$GUARD_CONFIG_DIR/thinking.skip.reason" ]]; then
   printf 'opus_4_7_incompatible\n' > "$GUARD_CONFIG_DIR/thinking.skip.reason"
 fi
 
-RUST_BIN="${SCRIPT_DIR}/src/guard/rust/target/release/setpoint-guard"
-BASH_IMPL="${SCRIPT_DIR}/src/guard/claude-quality-guard.sh"
+RUST_BIN="${SCRIPT_DIR}/src/guard/rust/target/release/claude-ops-guard"
+BASH_IMPL="${SCRIPT_DIR}/src/guard/claude-ops-guard.sh"
 
 # Always keep the bash script executable so manual fallback works even when
 # the Rust binary is the chosen ExecStart target.
@@ -48,10 +50,10 @@ else
 fi
 
 # Generate the unit file with the chosen ExecStart line. The original
-# template still exists at config/claude-quality-guard.service for manual
+# template still exists at config/claude-ops-guard.service for manual
 # inspection, but we no longer use sed against it because the ExecStart
 # line itself is what differs between impls.
-cat > "$SERVICE_DIR/claude-quality-guard.service" <<EOF
+cat > "$SERVICE_DIR/claude-ops-guard.service" <<EOF
 [Unit]
 Description=Claude Quality Guard (${IMPL_LABEL})
 After=network.target
@@ -66,12 +68,16 @@ RestartSec=5
 WantedBy=default.target
 EOF
 
-systemctl --user daemon-reload
-systemctl --user enable claude-quality-guard.service
+if [[ "${CLAUDE_OPS_SKIP_SYSTEMCTL:-0}" != "1" ]]; then
+  systemctl --user daemon-reload
+fi
 
 echo "Quality guard installed (impl: ${IMPL_LABEL})."
 echo ""
-echo "  ⚠  DISABLED by default for safety."
+echo "  Default mode is audit. Reconfigure later with:"
+echo "    claude-ops guard mode enforce"
+echo "    claude-ops guard mode audit"
+echo "    claude-ops guard mode disabled"
 echo ""
 if [[ -x "$RUST_BIN" ]]; then
   echo "  CLI:  ${RUST_BIN} {watch|apply|status|config|skip|unskip|reset|enable|disable}"
@@ -79,10 +85,10 @@ else
   echo "  CLI:  ${BASH_IMPL} {start|stop|status|config|skip|unskip|reset|enable|disable}"
 fi
 echo ""
-echo "  To activate, run one of:"
-echo "    systemctl --user start claude-quality-guard"
+echo "  To activate immediately, run one of:"
+echo "    systemctl --user start claude-ops-guard"
 if [[ -x "$RUST_BIN" ]]; then
-  echo "    ${RUST_BIN} enable && systemctl --user start claude-quality-guard"
+  echo "    ${RUST_BIN} enable && systemctl --user start claude-ops-guard"
 else
   echo "    ${BASH_IMPL} enable && ${BASH_IMPL} start"
 fi

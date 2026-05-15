@@ -1,5 +1,5 @@
 /**
- * Color system for setpoint.
+ * Color system for claude-ops.
  *
  * Two classes of color:
  *   1. Named ANSI colors (green, yellow, red, cyan, dim, bold) — emit a
@@ -11,7 +11,7 @@
  *      transitions instead of 3 hard bands. In ansi16 mode they fall
  *      back to classic SGR 32/33/31.
  *
- * NO_COLOR, SETPOINT_PLAIN, and non-TTY stdout are all honoured — in
+ * NO_COLOR, CLAUDE_OPS_PLAIN, and non-TTY stdout are all honoured — in
  * those modes every function returns plain text with no escapes.
  *
  * Callers set the mode automatically via the first lookup; tests can
@@ -55,7 +55,12 @@ export function setColorMode(newMode = null, paletteName = null) {
 /* Static SGR constants (ANSI 16-color)                                  */
 /* -------------------------------------------------------------------- */
 
-export const RESET  = '\x1b[0m';
+const RESET_SGR = '\x1b[0m';
+export const RESET = {
+  toString() { return mode() === 'none' ? '' : RESET_SGR; },
+  valueOf() { return mode() === 'none' ? '' : RESET_SGR; },
+  [Symbol.toPrimitive]() { return mode() === 'none' ? '' : RESET_SGR; },
+};
 const DIM    = '\x1b[2m';
 const RED    = '\x1b[31m';
 const GREEN  = '\x1b[32m';
@@ -102,6 +107,22 @@ function rgbEscape(rgb, ansi16Fallback = '') {
   if (m === 'ansi16') return ansi16Fallback;
   if (m === 'ansi256') return ansi256FromRgb(rgb);
   return ansiTrueColor(rgb);
+}
+
+/**
+ * Qualitative state color. Used by non-threshold HUD elements that still
+ * need to respect NO_COLOR / plain / non-TTY mode.
+ *
+ * @param {string} state
+ * @param {string} [ansi16Fallback]
+ * @returns {string}
+ */
+export function getStateColor(state, ansi16Fallback = '') {
+  const m = mode();
+  if (m === 'none') return '';
+  const rgb = palette().stateColor(state);
+  if (!rgb) return '';
+  return rgbEscape(rgb, ansi16Fallback);
 }
 
 /**
@@ -179,15 +200,22 @@ export function getBurnColor(rate)       { return thresholdColor(rate,    BURN_S
 export function getCacheColor(percent)   { return thresholdColor(percent, CACHE_STOPS); }
 
 /**
- * Effort level → color. Still a qualitative mapping, not a gradient.
+ * Effort level → color. Qualitative mapping over Opus 4.7's five rungs:
+ *   low / medium → warn
+ *   high / xhigh / max → ok (xhigh + max default for Opus 4.7 coding)
+ *   anything else → critical (unknown / `default` / `?`)
+ *
+ * `xhigh` was introduced in Opus 4.7 and is the Claude Code CLI
+ * default — before this change it fell through to `critical` and
+ * rendered as a red `?` on every 4.7 session.
  */
 export function getEffortColor(effort) {
   const m = mode();
   if (m === 'none') return '';
   const state =
-    effort === 'high' || effort === 'max' ? 'ok'
-      : effort === 'medium'               ? 'warn'
-      :                                     'critical';
+    effort === 'high' || effort === 'xhigh' || effort === 'max' ? 'ok'
+      : effort === 'low' || effort === 'medium'                 ? 'warn'
+      :                                                           'critical';
   return rgbEscape(
     palette().stateColor(state),
     state === 'ok' ? GREEN : state === 'warn' ? YELLOW : RED,

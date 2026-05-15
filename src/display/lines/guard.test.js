@@ -9,8 +9,22 @@ import { resetDefaultsCache } from '../../data/defaults.js';
 // Strip ANSI for readable assertions.
 const strip = s => s.replace(/\x1b\[[0-9;]*m/g, '');
 
+function canonicalSummary({ drift = 4, held = 3, info = 8, skipped = 1, internal = 10, rawDrift = 14 } = {}) {
+  return {
+    total: 17,
+    official: {
+      categories: { total: 17, docsBacked: 7, internalOnly: internal, held: 3, drift, info: 1 },
+      controls: { total: 15, held, drift, info, absent: 12 },
+      driftControls: [],
+    },
+    internal: { total: internal, held: 0, probe: rawDrift, skipped: 0 },
+    skipped: { total: skipped, categories: skipped ? [{ category: 'thinking', reason: 'test' }] : [] },
+    raw: { held: 2, skipped, drift: rawDrift },
+  };
+}
+
 afterEach(() => {
-  delete process.env.CLAUDE_HUD_DEFAULTS_FILE;
+  delete process.env.CLAUDE_OPS_DEFAULTS_FILE;
   resetDefaultsCache();
 });
 
@@ -21,7 +35,49 @@ test('guard DOWN state shows inventory and systemctl hint', () => {
   }));
   assert.match(line, /✗ DOWN/);
   assert.match(line, /17 unprotected/);
-  assert.match(line, /systemctl --user start claude-quality-guard/);
+  assert.match(line, /systemctl --user start claude-ops-guard/);
+});
+
+test('guard audit-only state is distinct from service-down failure', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: {
+      running: false,
+      auditOnly: true,
+      categorySummary: canonicalSummary(),
+    },
+  }));
+  assert.match(line, /◌ AUDIT/);
+  assert.match(line, /docs:4 drift/);
+  assert.match(line, /int:10 probes/);
+  assert.match(line, /skip:1/);
+  assert.match(line, /claude-ops guard validate/);
+  assert.doesNotMatch(line, /DOWN/);
+});
+
+test('guard audit-only state falls back when category summary is unavailable', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: { running: false, auditOnly: true },
+  }));
+  assert.match(line, /◌ AUDIT/);
+  assert.match(line, /docs:unknown/);
+  assert.doesNotMatch(line, /17 not enforced/);
+});
+
+test('guard disabled state is distinct from audit-only and down', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: {
+      running: false,
+      disabled: true,
+      categorySummary: canonicalSummary(),
+    },
+  }));
+  assert.match(line, /✗ DISABLED/);
+  assert.match(line, /claude-ops guard mode audit\|enforce/);
+  assert.doesNotMatch(line, /◌ AUDIT/);
+  assert.doesNotMatch(line, /✗ DOWN/);
 });
 
 test('all categories held (no skips, no activations) shows ✓17/17 quiet', () => {
@@ -55,6 +111,25 @@ test('skipped categories render as a first-class state', () => {
   }));
   assert.match(line, /◐14\/17/);
   assert.match(line, /○3 skipped/);
+});
+
+test('drift categories render as first-class inventory when summary is available', () => {
+  const line = strip(renderGuardLine({
+    narrow: false,
+    guardStatus: {
+      running: true,
+      skippedCount: 1,
+      skippedCategories: ['thinking'],
+      activationsToday: 0,
+      lastActivation: null,
+      lastFlag: null,
+      flagCounts: {},
+      categorySummary: canonicalSummary(),
+    },
+  }));
+  assert.match(line, /✗docs:4 drift/);
+  assert.match(line, /int:10 probes/);
+  assert.match(line, /○1 skip/);
 });
 
 test('activations collapse into a single "↻N today (last:X Nm)" field', () => {
@@ -99,7 +174,7 @@ test('narrow layout keeps the collapsed activity field and the one-char ribbon d
 });
 
 test('total category count is read live from defaults.json (Phase 1.5)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'claude-hud-guard-cats-'));
+  const dir = mkdtempSync(join(tmpdir(), 'claude-ops-guard-cats-'));
   const file = join(dir, 'defaults.json');
   // 5 categories, not 17 — display must reflect this.
   writeFileSync(file, JSON.stringify({
@@ -107,7 +182,7 @@ test('total category count is read live from defaults.json (Phase 1.5)', () => {
       categories: { a: 'a', b: 'b', c: 'c', d: 'd', e: 'e' },
     },
   }));
-  process.env.CLAUDE_HUD_DEFAULTS_FILE = file;
+  process.env.CLAUDE_OPS_DEFAULTS_FILE = file;
   resetDefaultsCache();
 
   try {
@@ -123,10 +198,10 @@ test('total category count is read live from defaults.json (Phase 1.5)', () => {
 });
 
 test('falls back to 17 when defaults.json has no guard.categories', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'claude-hud-guard-empty-'));
+  const dir = mkdtempSync(join(tmpdir(), 'claude-ops-guard-empty-'));
   const file = join(dir, 'defaults.json');
   writeFileSync(file, JSON.stringify({ unrelated: true }));
-  process.env.CLAUDE_HUD_DEFAULTS_FILE = file;
+  process.env.CLAUDE_OPS_DEFAULTS_FILE = file;
   resetDefaultsCache();
 
   try {

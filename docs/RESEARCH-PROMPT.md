@@ -1,4 +1,4 @@
-# Gemini Research Prompt — Setpoint HUD v2
+# Gemini Research Prompt — Claude Ops HUD v2
 
 > Paste everything below (between the `---` markers) into Google Gemini (Deep Research mode preferred). It is a self-contained research brief with full project context, the exact questions we need answered, and the deliverable format.
 
@@ -8,7 +8,7 @@
 
 ## 1. What I'm building and why I need this research
 
-I maintain **`setpoint`** — a terminal status-line HUD + control loop for Anthropic's **Claude Code CLI**. It does four things in one process family:
+I maintain **`claude-ops`** — a terminal status-line HUD + control loop for Anthropic's **Claude Code CLI**. It does four things in one process family:
 
 1. **Renders an always-on 8-line HUD** above the Claude Code input area (`statusLine` plugin).
 2. **Guards 17 `tengu_*` GrowthBook feature flags** at specific values by watching `~/.claude.json` with `inotifywait` and re-applying reverts in <500 ms.
@@ -75,18 +75,18 @@ Known weaknesses I want this research to resolve:
 
 ## 4. Subsystems (what each currently does, and the kind of intelligence each needs)
 
-### 4.1 Guard (`src/guard/claude-quality-guard.sh`, bash + python one-shot)
+### 4.1 Guard (`src/guard/claude-ops-guard.sh`, bash + python one-shot)
 
 - Watches `~/.claude.json` with `inotifywait`. On any write, re-applies the 17-category override set in a single Python pass.
-- Runs as a disabled-by-default systemd user service (`claude-quality-guard.service`).
-- Per-category skip files at `~/.claude/plugins/claude-hud/guard-config/<cat>.skip`.
-- Logs every activation to `/tmp/claude-quality-guard.log`.
-- CLI: `setpoint guard status [--json]` prints held/drift/skipped per category.
+- Runs as a disabled-by-default systemd user service (`claude-ops-guard.service`).
+- Per-category skip files at `~/.claude/plugins/claude-ops/guard-config/<cat>.skip`.
+- Logs every activation to `~/.claude/plugins/claude-ops/guard.log`.
+- CLI: `claude-ops guard status [--json]` prints held/drift/skipped per category.
 
 ### 4.2 Analytics (`src/analytics/`, node ESM daemon polling every 60 s)
 
 - Reads session JSONLs, computes burn rate, cache efficiency, input/output/cache tokens, tool call counts, thinking turns, agent spawns, compaction events.
-- Writes `~/.claude/plugins/claude-hud/token-stats/<session_id>.json` (per-session cache) and appends to `usage-history.jsonl` every 5 min.
+- Writes `~/.claude/plugins/claude-ops/token-stats/<session_id>.json` (per-session cache) and appends to `usage-history.jsonl` every 5 min.
 - `rates.js` does the 5h/7d projection math (linear extrapolation from elapsed window fraction).
 
 ### 4.3 Anomaly detector (`src/anomaly/`)
@@ -115,7 +115,7 @@ Organize your final report around these sections. Depth matters more than breadt
 
 ### 5.1 Claude Code internals (authoritative)
 
-- Enumerate every documented and reverse-engineered **`tengu_*` GrowthBook flag** you can find, with: canonical name, observed value type, observed default, what it actually controls, and which Claude Code commit / release introduced or changed it. Scan the `anthropics/claude-code` GitHub repo, issues, discussions, Reddit (`r/ClaudeAI`, `r/ClaudeCode`), HackerNews threads, and independent writeups. For each, say whether `setpoint`'s current target value in §2 is correct, suboptimal, outdated, or dangerous.
+- Enumerate every documented and reverse-engineered **`tengu_*` GrowthBook flag** you can find, with: canonical name, observed value type, observed default, what it actually controls, and which Claude Code commit / release introduced or changed it. Scan the `anthropics/claude-code` GitHub repo, issues, discussions, Reddit (`r/ClaudeAI`, `r/ClaudeCode`), HackerNews threads, and independent writeups. For each, say whether `claude-ops`'s current target value in §2 is correct, suboptimal, outdated, or dangerous.
 - Document the **exact schema** of the status-line stdin JSON (all known fields, not just the ones in §2). Include fields that only appear under certain conditions (Opus vs Sonnet, compacted vs fresh session, rate-limited vs not, Cowork enabled, etc.).
 - Document the **exact schema** of session transcript JSONLs: all message types, tool-call shapes, token-usage shapes, how agent spawns are serialized, how compaction events appear, how Cowork / CCD background processes leave traces.
 - Explain how `effortLevel` is interpreted at runtime — does it map to a thinking-token budget? Does it interact with `tengu_crystal_beam.budgetTokens`? Does Claude Code silently downgrade effort in-session (the `grey_step` / `willow_mode` pathways)? What are the observable signals that a silent downgrade happened?
@@ -124,7 +124,7 @@ Organize your final report around these sections. Depth matters more than breadt
 
 ### 5.2 Observability & control-loop design (what a sophisticated HUD would show)
 
-- Research **terminal HUD / TUI design** — what do best-in-class observability UIs (htop, btop, k9s, lazygit, glances, nvtop, bpftop, zellij status bars, fastfetch, gpustat, ccusage, ccstatusline, CCometixLine) do that `setpoint` v1 doesn't? Be specific about *what information is shown* and *how it's encoded*, not just "it looks pretty."
+- Research **terminal HUD / TUI design** — what do best-in-class observability UIs (htop, btop, k9s, lazygit, glances, nvtop, bpftop, zellij status bars, fastfetch, gpustat, ccusage, ccstatusline, CCometixLine) do that `claude-ops` v1 doesn't? Be specific about *what information is shown* and *how it's encoded*, not just "it looks pretty."
 - What's the right density-vs-signal tradeoff for an **always-on 8-line HUD that renders above a TTY prompt**? Eye-tracking / usability research welcomed.
 - For each of the 8 current lines, critique: (a) is this line carrying its weight? (b) what's a strictly-better information payload for this line? (c) is there a completely different line that would be more valuable?
 - Propose **at least 3 alternative layouts**: one optimized for a tiled WM power user (wide terminals), one for laptop-only / narrow terminals, and one for the "I only glance at it" casual user. Include ASCII mockups.
@@ -136,7 +136,7 @@ Organize your final report around these sections. Depth matters more than breadt
 
 - Research **budget-management algorithms** applicable to a dual-window rate limit (5 h + 7 d) with a known reset time. What does the optimal-stopping / bandit / constrained-MDP literature say? Is there a clean closed-form "safe spend rate" that beats linear extrapolation?
 - What's the right way to fuse multiple signals (5h projection, 7d projection, burn rate, cache efficiency, R:E ratio, compaction frequency, session duration, model, effort) into a **single actionable recommendation**? Weighted score? Rule-based expert system with confidence? Learned model? Be specific about tradeoffs.
-- How do **ccusage**, **Claude-Code-Usage-Monitor**, **Cometix**, **ccstatusline**, and any paid tools (Granola-style usage dashboards, LangSmith, Helicone, PostHog-for-LLMs) project and advise? What do they do better than `setpoint`? What do they get wrong?
+- How do **ccusage**, **Claude-Code-Usage-Monitor**, **Cometix**, **ccstatusline**, and any paid tools (Granola-style usage dashboards, LangSmith, Helicone, PostHog-for-LLMs) project and advise? What do they do better than `claude-ops`? What do they get wrong?
 - What's the right **"session cost"** metric to display — raw API-equivalent $, opportunity cost (% of weekly budget), time-to-exhaustion? What do power users actually act on?
 - What **confidence / uncertainty** should be attached to every projection? A 5 h window with only 10 min elapsed has noisy linear extrapolation; how should the HUD communicate that the number is not yet trustworthy?
 - When should the advisor recommend **model swap** (Opus → Sonnet) vs **effort downgrade** vs **hard stop** vs **/clear** vs **restart-session**? What does the evidence say about which of these is most effective for reclaiming a degraded session?
@@ -161,7 +161,7 @@ Organize your final report around these sections. Depth matters more than breadt
 
 ### 5.6 Ecosystem & positioning
 
-- Deep-dive comparison of `setpoint` vs: ryoppippi/ccusage, sirmalloc/ccstatusline, Maciek-roboblog/Claude-Code-Usage-Monitor, Haleclipse/CCometixLine, and any newer tools launched 2026-01 → 2026-04. For each: feature matrix, design philosophy, what they do that `setpoint` should adopt, what `setpoint` already does better.
+- Deep-dive comparison of `claude-ops` vs: ryoppippi/ccusage, sirmalloc/ccstatusline, Maciek-roboblog/Claude-Code-Usage-Monitor, Haleclipse/CCometixLine, and any newer tools launched 2026-01 → 2026-04. For each: feature matrix, design philosophy, what they do that `claude-ops` should adopt, what `claude-ops` already does better.
 - Are there **Anthropic-official** tooling directions we should watch? A status-line API change, an official analytics dashboard, an official guard-like mechanism? Cite release notes, blog posts, and staff Twitter/X.
 - Are there **closed-source / paid** tools (Cursor-specific, Windsurf-specific, GitHub Copilot-specific) that solve the same telemetry problem for non-Claude-Code editors, and what can we learn from their UX?
 
@@ -193,7 +193,7 @@ End your report with a section of **"questions AJ didn't ask but should've"** �
 A single Markdown document with this exact section hierarchy:
 
 ```
-# Setpoint HUD v2 — Research Report
+# Claude Ops HUD v2 — Research Report
 
 ## 0. Corrections to the brief
 (anything in §2 / §3 / §4 of this prompt that's wrong or out of date)
@@ -208,7 +208,7 @@ A single Markdown document with this exact section hierarchy:
 
 ## 2. HUD design
 ### 2.1 Best-in-class TUI reference set
-### 2.2 Per-line critique of setpoint v1
+### 2.2 Per-line critique of claude-ops v1
 ### 2.3 Three proposed layouts (with ASCII mockups)
 ### 2.4 Micro-visualization vocabulary
 ### 2.5 Priority / suppression strategy

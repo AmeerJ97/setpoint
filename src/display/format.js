@@ -41,6 +41,34 @@ export function formatTokens(n) {
 }
 
 /**
+ * Format a rate like tokens-per-minute with a 1-decimal `k` suffix
+ * once we cross four digits — 8365 → "8.3k", 142000 → "142k",
+ * 980 → "980". Prefer this over bare integers for dashboard burn
+ * lines where magnitude matters more than last-digit precision.
+ * @param {number} n
+ * @returns {string}
+ */
+export function formatRate(n) {
+  const v = Math.round(Number(n) || 0);
+  if (v >= 100_000) return `${Math.round(v / 1000)}k`;
+  if (v >= 1_000)   return `${(v / 1000).toFixed(1)}k`;
+  return String(v);
+}
+
+/**
+ * Format a plain count with a compact `k` suffix past the four-digit
+ * threshold. 18 → "18", 1500 → "1.5k", 23400 → "23k".
+ * @param {number} n
+ * @returns {string}
+ */
+export function formatCount(n) {
+  const v = Math.round(Number(n) || 0);
+  if (v >= 10_000) return `${Math.round(v / 1000)}k`;
+  if (v >= 1_000)  return `${(v / 1000).toFixed(1)}k`;
+  return String(v);
+}
+
+/**
  * Format a duration from start date to now.
  * @param {Date|undefined} sessionStart
  * @param {function} [now=Date.now]

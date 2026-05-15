@@ -13,7 +13,7 @@
 
 setup() {
   REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
-  GUARD="${REPO_ROOT}/src/guard/claude-quality-guard.sh"
+  GUARD="${REPO_ROOT}/src/guard/claude-ops-guard.sh"
 
   TEST_HOME="$(mktemp -d)"
   export HOME="$TEST_HOME"
@@ -83,8 +83,8 @@ JSON
 }
 
 @test "skipping truncation disables the subkey loop" {
-  mkdir -p "$TEST_HOME/.claude/plugins/claude-hud/guard-config"
-  touch "$TEST_HOME/.claude/plugins/claude-hud/guard-config/truncation.skip"
+  mkdir -p "$TEST_HOME/.claude/plugins/claude-ops/guard-config"
+  touch "$TEST_HOME/.claude/plugins/claude-ops/guard-config/truncation.skip"
   echo '{}' > "$CLAUDE_JSON"
 
   run "$GUARD" apply

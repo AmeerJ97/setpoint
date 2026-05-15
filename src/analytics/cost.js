@@ -3,8 +3,9 @@
  * Gives a relative cost signal even on a Pro/Max subscription.
  *
  * Pricing is loaded from config/defaults.json (or the override at
- * CLAUDE_HUD_PRICING_FILE) keyed by model ID. Unknown models fall back
- * to the configured defaultModel. Prices are USD per 1M tokens.
+ * CLAUDE_OPS_PRICING_FILE) keyed by model ID. Unknown named models do not
+ * silently fall back to the default model; callers get a zero-priced row with
+ * known=false so the HUD can render price:unknown instead of fake cost.
  *
  * Pricing rows hold separate fields for 5-minute and 1-hour cache
  * writes (per Anthropic's published rates) plus cache_read. The
@@ -19,49 +20,74 @@ import { getPricing } from '../data/defaults.js';
  *   1. Exact key ("claude-opus-4-7")
  *   2. Display-name variants ("Opus 4.7" → "claude-opus-4-7")
  *   3. Any model key whose name appears as a substring of the input
- *   4. Fallback to defaultModel
+ *   4. Default model only when modelName is omitted
  *
  * @param {string} [modelName]
- * @returns {{ input:number, output:number, cacheCreate5m:number, cacheCreate1h:number, cacheRead:number, cacheCreate:number }}
+ * @returns {{ input:number, output:number, cacheCreate5m:number, cacheCreate1h:number, cacheRead:number, cacheCreate:number, known:boolean, modelId:string|null, source?:string|null, retrievedAt?:string|null }}
  */
 export function resolvePricing(modelName) {
   const { defaultModel, models } = getPricing();
 
-  const row = pickRow(models, defaultModel, modelName);
-  return normalizeRow(row);
+  const picked = pickRow(models, defaultModel, modelName);
+  return normalizeRow(picked.row, picked);
 }
 
 function pickRow(models, defaultModel, modelName) {
-  if (!modelName) return models[defaultModel] ?? firstRowOrZero(models);
-
-  const normalized = String(modelName).toLowerCase().replace(/\s+/g, '-');
-
-  if (models[normalized]) return models[normalized];
-  if (models[modelName]) return models[modelName];
-
-  for (const key of Object.keys(models)) {
-    if (normalized.includes(key) || key.includes(normalized)) return models[key];
+  if (!modelName) {
+    const row = models[defaultModel] ?? firstRowOrZero(models).row;
+    return { row, known: Boolean(row), modelId: defaultModel ?? null, fallback: 'default' };
   }
 
-  return models[defaultModel] ?? firstRowOrZero(models);
+  const normalized = normalizeModelKey(modelName);
+
+  if (models[normalized]) return { row: models[normalized], known: true, modelId: normalized };
+  if (models[modelName]) return { row: models[modelName], known: true, modelId: modelName };
+
+  for (const key of Object.keys(models)) {
+    const normalizedKey = normalizeModelKey(key);
+    if (normalized.includes(normalizedKey) || normalizedKey.includes(normalized)) {
+      return { row: models[key], known: true, modelId: key };
+    }
+  }
+
+  return { row: zeroRow(), known: false, modelId: normalized, fallback: 'unknown' };
 }
 
-function normalizeRow(row) {
-  const cacheCreate5m = row.cacheCreate5m ?? row.cacheCreate ?? 0;
-  const cacheCreate1h = row.cacheCreate1h ?? cacheCreate5m * 1.6;
+function normalizeModelKey(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+
+function normalizeRow(row, meta = {}) {
+  const safe = row ?? zeroRow();
+  const cacheCreate5m = safe.cacheCreate5m ?? safe.cacheCreate ?? 0;
+  const cacheCreate1h = safe.cacheCreate1h ?? cacheCreate5m * 1.6;
   return {
-    input: row.input ?? 0,
-    output: row.output ?? 0,
+    input: safe.input ?? 0,
+    output: safe.output ?? 0,
     cacheCreate5m,
     cacheCreate1h,
     cacheCreate: cacheCreate5m,
-    cacheRead: row.cacheRead ?? 0,
+    cacheRead: safe.cacheRead ?? 0,
+    known: meta.known !== false,
+    modelId: meta.modelId ?? null,
+    source: safe.source ?? safe.sourceUrl ?? null,
+    retrievedAt: safe.retrievedAt ?? safe.retrieved_at ?? null,
+    fallback: meta.fallback ?? null,
   };
 }
 
 function firstRowOrZero(models) {
   const k = Object.keys(models)[0];
-  if (k) return models[k];
+  if (k) return { row: models[k], key: k };
+  return { row: zeroRow(), key: null };
+}
+
+function zeroRow() {
   return { input: 0, output: 0, cacheCreate5m: 0, cacheCreate1h: 0, cacheRead: 0 };
 }
 
@@ -100,6 +126,47 @@ export function calculateCost(stats, modelName) {
   const input  = (stats.totalInput  ?? 0) / 1_000_000 * p.input  * mult;
   const output = (stats.totalOutput ?? 0) / 1_000_000 * p.output * mult;
   return input + output;
+}
+
+/**
+ * Estimate API-billable session cost from token counters.
+ *
+ * Unlike calculateCost(), this includes prompt-cache reads and writes,
+ * because API/Console/Gateway/cloud-provider sessions are cost-metered.
+ * When cache TTL splits are available, 1h writes use the 1h rate and
+ * remaining cache writes use the 5m rate. When only the legacy aggregate
+ * cache-create counter exists, it is treated as 5m writes.
+ *
+ * @param {object} stats
+ * @param {number} [stats.totalInput=0]
+ * @param {number} [stats.totalOutput=0]
+ * @param {number} [stats.totalCacheCreate=0]
+ * @param {number} [stats.totalCacheCreate5m=0]
+ * @param {number} [stats.totalCacheCreate1h=0]
+ * @param {number} [stats.totalCacheRead=0]
+ * @param {string} [modelName]
+ * @returns {number} estimated API-billable USD cost
+ */
+export function calculateBillableCost(stats, modelName) {
+  if (!stats) return 0;
+  const p = resolvePricing(modelName);
+  const mult = getDataResidencyMultiplier();
+
+  const input = (stats.totalInput ?? 0) / 1_000_000 * p.input * mult;
+  const output = (stats.totalOutput ?? 0) / 1_000_000 * p.output * mult;
+
+  const split5m = Number(stats.totalCacheCreate5m ?? 0);
+  const split1h = Number(stats.totalCacheCreate1h ?? 0);
+  const aggregateCreate = Number(stats.totalCacheCreate ?? 0);
+  const hasSplit = split5m > 0 || split1h > 0;
+  const create5mTokens = hasSplit ? split5m : aggregateCreate;
+  const create1hTokens = hasSplit ? split1h : 0;
+
+  const cacheCreate5m = create5mTokens / 1_000_000 * p.cacheCreate5m * mult;
+  const cacheCreate1h = create1hTokens / 1_000_000 * p.cacheCreate1h * mult;
+  const cacheRead = (stats.totalCacheRead ?? 0) / 1_000_000 * p.cacheRead * mult;
+
+  return input + output + cacheCreate5m + cacheCreate1h + cacheRead;
 }
 
 /**
@@ -188,7 +255,15 @@ export function ewmaBurnRate(recentTurnsOutput, durationMin, alpha = 0.2) {
   for (let i = 1; i < recentTurnsOutput.length; i++) {
     ewma = alpha * recentTurnsOutput[i] + (1 - alpha) * ewma;
   }
-  const turnsPerMin = recentTurnsOutput.length / Math.max(1, durationMin);
+  // The RECENT_TURNS_TRACKED window is 12 turns. Use the lesser of the
+  // full session duration and the estimated time that 12 turns would span
+  // (capped at 30 min). This prevents turnsPerMin → 0 over long sessions,
+  // which made ewmaBurnRate monotonically decay even at constant pace.
+  // At 12 turns over 30 min = 0.4 turns/min; that's the floor, not
+  // the ceiling — fast sessions will still show true rate.
+  const RECENT_WINDOW_CAP_MIN = 30;
+  const recentWindowMin = Math.min(durationMin, RECENT_WINDOW_CAP_MIN);
+  const turnsPerMin = recentTurnsOutput.length / Math.max(1, recentWindowMin);
   return Math.round(ewma * turnsPerMin);
 }
 

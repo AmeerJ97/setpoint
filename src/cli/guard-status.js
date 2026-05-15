@@ -1,5 +1,5 @@
 /**
- * `setpoint guard status` — drilldown view of the guard's enforcement
+ * `claude-ops guard status` — drilldown view of the guard's enforcement
  * surface. Follows the chezmoi `status`/`doctor` split: the statusLine
  * stays narrow, this subcommand answers "what exactly is being
  * enforced right now?" in full detail.
@@ -11,40 +11,25 @@
  * Sources of truth:
  *   • Category registry    → config/defaults.json guard.categories
  *   • Skipped categories   → $PLUGIN_DIR/guard-config/<cat>.skip
- *   • Recent activations   → /tmp/claude-quality-guard.log
+ *   • Recent activations   → $PLUGIN_DIR/guard.log
  *   • Current held values  → ~/.claude.json cachedGrowthBookFeatures
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync, existsSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PLUGIN_DIR, CLAUDE_JSON_PATH, GUARD_LOG_FILE } from '../data/paths.js';
 import { loadDefaults } from '../data/defaults.js';
+import { collectVertexConfigState } from '../guard/vertex-config.js';
+import { guardControlMeta } from '../guard/guard-manifest.js';
+import { buildGuardPresentationSummary, collectGuardValidationState } from '../guard/guard-validation.js';
 
-// Flag-target map mirroring src/guard/claude-quality-guard.sh apply_overrides().
-// Keep this in sync when adding categories to the bash guard.
-const CATEGORY_TARGETS = {
-  brevity:      [{ path: ['cachedGrowthBookFeatures', 'tengu_swann_brevity'], target: '' }],
-  quiet:        [
-    { path: ['cachedGrowthBookFeatures', 'tengu_sotto_voce'], target: false },
-    { path: ['cachedGrowthBookFeatures', 'quiet_fern'],       target: false },
-    { path: ['cachedGrowthBookFeatures', 'quiet_hollow'],     target: false },
-  ],
-  summarize:    [{ path: ['cachedGrowthBookFeatures', 'tengu_summarize_tool_results'], target: false }],
-  maxtokens:    [{ path: ['cachedGrowthBookFeatures', 'tengu_amber_wren', 'maxTokens'], target: 128000 }],
-  truncation:   [{ path: ['cachedGrowthBookFeatures', 'tengu_pewter_kestrel', 'global'], target: 500000 }],
-  refresh_ttl:  [{ path: ['cachedGrowthBookFeatures', 'tengu_willow_refresh_ttl_hours'], target: 8760 }],
-  mcp_connect:  [{ path: ['cachedGrowthBookFeatures', 'tengu_claudeai_mcp_connectors'], target: false }],
-  bridge:       [{ path: ['bridge', 'enabled'], target: false }],
-  grey_step:    [{ path: ['cachedGrowthBookFeatures', 'tengu_grey_step'], target: false }],
-  grey_step2:   [{ path: ['cachedGrowthBookFeatures', 'tengu_grey_step2', 'enabled'], target: false }],
-  grey_wool:    [{ path: ['cachedGrowthBookFeatures', 'tengu_grey_wool'], target: false }],
-  thinking:     [{ path: ['cachedGrowthBookFeatures', 'tengu_crystal_beam', 'budgetTokens'], target: 128000 }],
-  willow_mode:  [{ path: ['cachedGrowthBookFeatures', 'tengu_willow_mode'], target: '' }],
-  compact_max:  [{ path: ['cachedGrowthBookFeatures', 'tengu_sm_compact_config', 'maxTokens'], target: 200000 }],
-  compact_init: [{ path: ['cachedGrowthBookFeatures', 'tengu_sm_config', 'minimumMessageTokensToInit'], target: 500000 }],
-  tool_persist: [{ path: ['cachedGrowthBookFeatures', 'tengu_tool_result_persistence'], target: true }],
-  chomp:        [{ path: ['cachedGrowthBookFeatures', 'tengu_chomp_inflection'], target: true }],
-};
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const GUARD_TARGETS_FILE = resolve(MODULE_DIR, '..', '..', 'config', 'guard-targets.json');
+
+// Canonical status target map. Rust enforcement has a parity test against
+// this file so the status view cannot silently diverge from the guard.
+export const CATEGORY_TARGETS = JSON.parse(readFileSync(GUARD_TARGETS_FILE, 'utf8'));
 
 function getAtPath(obj, path) {
   let cur = obj;
@@ -161,6 +146,9 @@ export function collectGuardState() {
     else state = 'drift';
 
     const seen = lastSeen[cat] ?? null;
+    const meta = guardControlMeta(cat) ?? {};
+    const officialControls = (meta.officialControls ?? []).map(control => control.name);
+    const authority = meta.authority ?? 'internal-growthbook';
     out.push({
       category: cat,
       state,
@@ -169,6 +157,11 @@ export function collectGuardState() {
       lastFlag: seen?.flag ?? null,
       description: descriptions[cat] ?? '',
       skipReason: state === 'skipped' ? (skipReasons.get(cat) ?? null) : null,
+      authority,
+      tier: officialControls.length > 0 ? authority : 'internal-experimental',
+      enforcement: meta.enforcement ?? 'internal-opt-in',
+      risk: meta.risk ?? null,
+      officialControls,
     });
   }
   return out;
@@ -197,7 +190,15 @@ const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
-const STATE_COLOR = { held: GREEN, drift: RED, skipped: YELLOW };
+const STATE_COLOR = {
+  held: GREEN,
+  drift: RED,
+  skipped: YELLOW,
+  probe: YELLOW,
+  info: DIM,
+  'internal-only': YELLOW,
+  disabled: YELLOW,
+};
 
 function formatAge(date) {
   if (!date) return '—';
@@ -220,19 +221,46 @@ function formatValue(v) {
  * Render the table view. Returns a string; caller writes to stdout.
  */
 export function renderTable(rows) {
+  const vertexConfig = rows.vertexConfig ?? collectVertexConfigState();
+  const categories = Array.isArray(rows) ? rows : rows.categories;
+  const validation = rows.validation ?? collectGuardValidationState();
+  const summary = rows.summary ?? buildGuardPresentationSummary(categories, validation);
   const lines = [];
-  lines.push(`${BOLD}setpoint guard status${RESET}`);
+  lines.push(`${BOLD}claude-ops guard status${RESET}`);
   lines.push('');
+  lines.push(`${BOLD}Summary:${RESET} `
+    + `${summary.official.controls.drift > 0 ? RED : GREEN}${summary.official.controls.drift} official drift${RESET}, `
+    + `${GREEN}${summary.official.controls.held} official held${RESET}, `
+    + `${YELLOW}${summary.internal.total} internal probes${RESET}, `
+    + `${YELLOW}${summary.skipped.total} skipped${RESET}`);
+  lines.push('');
+
+  lines.push(`${BOLD}Official controls${RESET}`);
+  lines.push(`${BOLD}STATE     CATEGORY        AUTHORITY              CONTROL${RESET}`);
+  for (const cat of validation.categories.filter(c => c.officialControls.length > 0)) {
+    const skipped = categories.find(r => r.category === cat.category && r.state === 'skipped');
+    const state = skipped ? 'skipped' : cat.state;
+    const color = STATE_COLOR[state] ?? RESET;
+    const reason = skipped?.skipReason ? ` ${DIM}[${skipped.skipReason}]${RESET}` : '';
+    lines.push(`${color}${state.padEnd(8)}${RESET}  ${cat.category.padEnd(14)}  ${cat.authority.padEnd(21)}  ${cat.claim}${reason}`);
+    for (const control of cat.officialControls) {
+      const cColor = STATE_COLOR[control.state] ?? RESET;
+      const source = control.present ? `${control.source}=${formatValue(control.value)}` : 'absent';
+      const expected = control.expected ? ` want ${control.expected}` : ' info';
+      lines.push(`    ${cColor}${control.state.padEnd(8)}${RESET} ${control.name} ${DIM}${source};${expected}${RESET}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(`${BOLD}Internal GrowthBook probes${RESET} ${DIM}(not primary guard failures)${RESET}`);
   lines.push(`${BOLD}STATE     CATEGORY        LAST EVENT       DESCRIPTION${RESET}`);
-  for (const row of rows) {
-    const color = STATE_COLOR[row.state] ?? RESET;
-    const stateCell = `${color}${row.state.padEnd(8)}${RESET}`;
+  for (const row of categories.filter(r => (r.officialControls ?? []).length === 0)) {
+    const state = row.state === 'drift' ? 'probe' : row.state;
+    const color = STATE_COLOR[state] ?? RESET;
+    const stateCell = `${color}${state.padEnd(8)}${RESET}`;
     const cat = row.category.padEnd(14);
     const age = row.lastSeen ? `${row.lastFlag ?? ''} ${formatAge(row.lastSeen)}` : '—';
     const ageCell = age.padEnd(16);
-    // When a category is skipped with a reason, render the reason inline in
-    // the description column so the drilldown answers "why is this skipped?"
-    // without the operator opening a sibling file.
     const desc = row.state === 'skipped' && row.skipReason
       ? `${row.description}${row.description ? ' ' : ''}${DIM}[${row.skipReason}]${RESET}`
       : row.description;
@@ -240,43 +268,46 @@ export function renderTable(rows) {
 
     for (const f of row.flags) {
       const diff = row.state === 'drift' && !deepEquals(f.actual, f.expected);
-      const flagColor = diff ? RED : DIM;
-      const detail = `    ${DIM}↳ ${f.flag}${RESET} = ${flagColor}${formatValue(f.actual)}${RESET}${diff ? ` ${DIM}(want ${formatValue(f.expected)})${RESET}` : ''}`;
+      const flagColor = diff ? YELLOW : DIM;
+      const detail = `    ${DIM}↳ ${f.flag}${RESET} = ${flagColor}${formatValue(f.actual)}${RESET}${diff ? ` ${DIM}(probe target ${formatValue(f.expected)})${RESET}` : ''}`;
       lines.push(detail);
     }
   }
+
   lines.push('');
-  const held = rows.filter(r => r.state === 'held').length;
-  const skipped = rows.filter(r => r.state === 'skipped').length;
-  const drift = rows.filter(r => r.state === 'drift').length;
-  lines.push(`${BOLD}Summary:${RESET} ${GREEN}${held} held${RESET}, ${YELLOW}${skipped} skipped${RESET}, ${drift > 0 ? RED : DIM}${drift} drifted${RESET}`);
+  if (vertexConfig.configured || vertexConfig.active) {
+    const color = vertexConfig.state === 'held' ? GREEN : YELLOW;
+    lines.push(`${color}${vertexConfig.state.padEnd(8)}${RESET}  ${'vertex_env'.padEnd(14)}  ${DIM}${'audit-only'.padEnd(16)}${RESET}  ${vertexConfig.detail}`);
+  }
   return lines.join('\n');
 }
 
 export function renderJson(rows) {
+  const vertexConfig = rows.vertexConfig ?? collectVertexConfigState();
+  const categories = Array.isArray(rows) ? rows : rows.categories;
+  const validation = rows.validation ?? collectGuardValidationState();
+  const summary = rows.summary ?? buildGuardPresentationSummary(categories, validation);
   return JSON.stringify({
     generatedAt: new Date().toISOString(),
-    summary: {
-      total: rows.length,
-      held: rows.filter(r => r.state === 'held').length,
-      skipped: rows.filter(r => r.state === 'skipped').length,
-      drift: rows.filter(r => r.state === 'drift').length,
-    },
-    categories: rows,
+    summary,
+    categories,
+    validation,
+    vertexConfig,
   }, null, 2);
 }
 
 export function main(argv = process.argv.slice(2)) {
   const rows = collectGuardState();
+  const validation = collectGuardValidationState();
+  const summary = buildGuardPresentationSummary(rows, validation);
   const json = argv.includes('--json');
-  process.stdout.write(json ? renderJson(rows) + '\n' : renderTable(rows) + '\n');
-  // Exit non-zero if anything is drifting — useful in CI.
-  const hasDrift = rows.some(r => r.state === 'drift');
-  return hasDrift ? 1 : 0;
+  const strict = argv.includes('--strict');
+  const payload = { categories: rows, validation, summary };
+  process.stdout.write(json ? renderJson(payload) + '\n' : renderTable(payload) + '\n');
+  const officialDrift = summary.official.controls.drift > 0;
+  return strict && officialDrift ? 1 : 0;
 }
 
-import { fileURLToPath } from 'node:url';
-import { realpathSync } from 'node:fs';
 const scriptPath = fileURLToPath(import.meta.url);
 const argvPath = process.argv[1];
 const isSamePath = (a, b) => {

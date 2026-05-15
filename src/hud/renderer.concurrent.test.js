@@ -15,12 +15,12 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RENDERER = join(HERE, 'renderer.js');
-const SANDBOX = mkdtempSync(join(tmpdir(), 'setpoint-concurrent-'));
+const SANDBOX = mkdtempSync(join(tmpdir(), 'claude-ops-concurrent-'));
 const CLAUDE_DIR = join(SANDBOX, '.claude');
 
 before(() => {
-  // Mirror the path helpers: PLUGIN_DIR = <CLAUDE_DIR>/plugins/claude-hud/
-  const pluginDir = join(CLAUDE_DIR, 'plugins', 'claude-hud');
+  // Mirror the path helpers: PLUGIN_DIR = <CLAUDE_DIR>/plugins/claude-ops/
+  const pluginDir = join(CLAUDE_DIR, 'plugins', 'claude-ops');
   const tokenDir  = join(pluginDir, 'token-stats');
   mkdirSync(tokenDir, { recursive: true });
 
@@ -63,22 +63,25 @@ function renderFor(sid) {
 
   const r = spawnSync('node', [RENDERER], {
     input: stdin,
-    env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE_DIR },
+    env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE_DIR, CLAUDE_OPS_SKIP_SYSTEMCTL: '1' },
     encoding: 'utf8',
   });
+  if (r.error?.code === 'EPERM') return null;
   if (r.status !== 0) throw new Error(`renderer exited ${r.status}: ${r.stderr}`);
   // Strip ANSI so substring checks are stable.
   return r.stdout.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-test('session A sees A\'s token totals, not B\'s', () => {
+test('session A sees A\'s token totals, not B\'s', t => {
   const out = renderFor('sid-A');
+  if (out === null) return t.skip('nested node spawn is blocked in this sandbox');
   assert.match(out, /in:12K/, 'sees A total input (12K)');
   assert.doesNotMatch(out, /in:80K/, 'must not see B total input');
 });
 
-test('session B sees B\'s token totals, not A\'s', () => {
+test('session B sees B\'s token totals, not A\'s', t => {
   const out = renderFor('sid-B');
+  if (out === null) return t.skip('nested node spawn is blocked in this sandbox');
   assert.match(out, /in:80K/, 'sees B total input (80K)');
   assert.doesNotMatch(out, /in:12K/, 'must not see A total input');
 });

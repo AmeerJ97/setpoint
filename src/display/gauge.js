@@ -14,10 +14,7 @@
  * computed yet.
  */
 
-import { dim, RESET } from './colors.js';
-import { getPalette } from './palettes.js';
-import { detectPalette } from './capability.js';
-import { ansiTrueColor } from './gradient.js';
+import { dim, getStateColor, RESET } from './colors.js';
 
 const LEVEL_TO_STATE = {
   ok: 'ok', watch: 'info', tight: 'warn', critical: 'critical', hit: 'critical',
@@ -34,9 +31,18 @@ function levelFromCurrent(pct) {
 }
 
 function stateEscape(state) {
-  const rgb = getPalette(detectPalette()).stateColor(state);
-  if (!rgb) return '';
-  return ansiTrueColor(rgb);
+  return getStateColor(state, ansi16Fallback(state));
+}
+
+function ansi16Fallback(state) {
+  switch (state) {
+    case 'ok': return '\x1b[32m';
+    case 'warn':
+    case 'attention': return '\x1b[33m';
+    case 'critical': return '\x1b[31m';
+    case 'info': return '\x1b[36m';
+    default: return '';
+  }
 }
 
 /**

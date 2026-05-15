@@ -20,12 +20,33 @@ export function getClaudeConfigDir(home = HOME) {
   return join(home, '.claude');
 }
 
+/**
+ * Resolve Claude Code's global state JSON path. Production defaults to
+ * ~/.claude.json; tests and nonstandard installs can override explicitly.
+ *
+ * @param {string} [home]
+ * @returns {string}
+ */
+export function getClaudeJsonPath(home = HOME) {
+  const envPath = process.env.CLAUDE_OPS_CLAUDE_JSON_PATH?.trim();
+  if (envPath) {
+    if (envPath === '~') return home;
+    if (envPath.startsWith('~/') || envPath.startsWith('~\\')) {
+      return join(home, envPath.slice(2));
+    }
+    return envPath;
+  }
+  return join(home, '.claude.json');
+}
+
 export const CLAUDE_DIR = getClaudeConfigDir();
-export const CLAUDE_JSON_PATH = `${CLAUDE_DIR}.json`;
+export const CLAUDE_JSON_PATH = getClaudeJsonPath();
 export const PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 export const SESSIONS_DIR = join(CLAUDE_DIR, 'sessions');
-export const PLUGIN_DIR = join(CLAUDE_DIR, 'plugins', 'claude-hud');
+export const PLUGIN_DIR = join(CLAUDE_DIR, 'plugins', 'claude-ops');
 export const HISTORY_FILE = join(PLUGIN_DIR, 'usage-history.jsonl');
+export const VERTEX_QUOTA_EVENTS_FILE = join(PLUGIN_DIR, 'vertex-quota-events.jsonl');
+export const VERTEX_API_TELEMETRY_FILE = join(PLUGIN_DIR, 'vertex-api-telemetry.json');
 export const TOKEN_STATS_FILE = join(PLUGIN_DIR, 'token-stats.jsonl');
 export const TOKEN_STATS_LATEST = join(PLUGIN_DIR, 'token-stats-latest.json');
 export const TOKEN_STATS_DIR = join(PLUGIN_DIR, 'token-stats');
@@ -63,7 +84,7 @@ export const RTK_STATS_DIR = join(PLUGIN_DIR, 'rtk-stats');
 export function rtkStatsFileFor(sessionId) {
   return join(RTK_STATS_DIR, `${sessionId}.json`);
 }
-export const GUARD_LOG_FILE = '/tmp/claude-quality-guard.log';
+export const GUARD_LOG_FILE = join(PLUGIN_DIR, 'guard.log');
 export const TRANSCRIPT_CACHE_DIR = join(PLUGIN_DIR, 'transcript-cache');
 
 // JSONL rotation limits

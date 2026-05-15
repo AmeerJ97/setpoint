@@ -13,10 +13,21 @@
  *
  * Anomaly alerts still override (critical first, warn next).
  */
-import { dim, green, yellow, red, cyan, RESET } from '../colors.js';
+import { dim, green, yellow, red, cyan, magenta, bold, RESET } from '../colors.js';
 import { padLabel, padVisualEnd } from '../format.js';
 import { truncateToWidth } from '../text.js';
 import { pickSalienceSegment } from './advisor-salience.js';
+
+// FSM badge glyphs — icon-only, always. Bold for anything past SCOUTING
+// so the eye catches state changes in peripheral vision; dim for the
+// neutral cold-start state so it doesn't compete with the recommendation.
+const FSM_BADGES = {
+  SCOUTING:   { icon: '◐', color: dim,     bold: false },
+  EXECUTING:  { icon: '▶', color: green,   bold: true  },
+  DEBUGGING:  { icon: '⚙', color: yellow,  bold: true  },
+  THRASHING:  { icon: '⚠', color: red,     bold: true  },
+  AWAIT_USER: { icon: '⏸', color: magenta, bold: true  },
+};
 
 // Fixed column widths for two-row alignment AND cross-line grid:
 //   gauge  = 32 cols → matches Context / Tokens / Guard `PRIMARY_COL_WIDTH`
@@ -70,6 +81,11 @@ export function renderAdvisorLine(ctx) {
     return warn ? `${head}${SEP}${yellow(`△ ${warn.message}`)}` : head;
   }
 
+  // API mode: replace TTE / quota gauge with cost-velocity display.
+  if (ctx.billingSignal === 'cost-metered' || ctx.mode === 'api' || ctx.mode === 'unknown') {
+    return renderApiAdvisorLine(ctx, label, narrow, advisory, warn);
+  }
+
   const config = SIGNAL_CONFIG[advisory.signal] ?? SIGNAL_CONFIG.nominal;
   // When confidence is low AND the tier is the default "ok" rung (no real
   // recommendation yet — engine hasn't seen enough data), dim the badge and
@@ -80,9 +96,11 @@ export function renderAdvisorLine(ctx) {
     advisory.confidence === 'low' && (advisory.tier ?? 'ok') === 'ok';
   const baseText = advisory.action ?? config.defaultLabel;
   const text = warmingUp ? `${baseText} — warming up` : baseText;
-  const recBadge = warmingUp
+  const fsmBadge = renderFsmBadge(advisory.fsm);
+  const rawAction = warmingUp
     ? dim(`~ ${text}`)
     : renderActionBadge(config, text);
+  const recBadge = fsmBadge ? `${fsmBadge} ${rawAction}` : rawAction;
 
   // Narrow mode — compact single row, same as before.
   if (narrow) {
@@ -114,6 +132,13 @@ export function renderAdvisorLine(ctx) {
   const salience = pickSalienceSegment(advisory, primaryWindow);
   if (salience) row1Parts.push(salience);
 
+  // Auto-effort swap trailer — only on the render that applied the
+  // swap. Uses the cyan `· auto:from→to` form so the user can see a
+  // swap just happened; absent otherwise.
+  if (ctx.effortSwap) {
+    row1Parts.push(cyan(`· auto:${ctx.effortSwap.from}→${ctx.effortSwap.to}`));
+  }
+
   const row2Parts = [
     padVisualEnd(renderCombinedGauge(secondaryWindow), COL_GAUGE),
     padVisualEnd(renderTte(secondaryWindow), COL_TTE),
@@ -144,6 +169,22 @@ export function renderAdvisorLine(ctx) {
  */
 function renderActionBadge(config, text) {
   return config.color(`${config.icon} ${text}`);
+}
+
+/**
+ * FSM state badge — always icon-only. Returns an empty string when the
+ * advisor output has no FSM slot (e.g., FSM failed silently inside the
+ * renderer's try/catch) so the line degrades cleanly.
+ *
+ * @param {{state?: string}|undefined|null} fsm
+ * @returns {string}
+ */
+function renderFsmBadge(fsm) {
+  if (!fsm || !fsm.state) return '';
+  const spec = FSM_BADGES[fsm.state];
+  if (!spec) return '';
+  const colored = spec.color(spec.icon);
+  return spec.bold ? bold(colored) : colored;
 }
 
 /**
@@ -293,3 +334,142 @@ function renderPeakGlyph(w) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// API mode advisor renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * In API mode there are no 5h/7d rolling windows to project against.
+ * Instead we show:
+ *   Row 1: API · $/h burn rate vs historical baseline · action badge
+ *   Row 2 (wide): session total cost · 7d cost · confidence
+ *
+ * Wide example:
+ *   Advisor API  $2.31/h  ▼ burn 2×P50 — switch to Sonnet │ conf:low
+ *           API  session:~$0.82 │ 7d:~$18.40 │ cost mode: no quota data
+ *
+ * Narrow example:
+ *   Adv  API  $2.31/h  ▼ burn high
+ *
+ * @param {import('../renderer.js').RenderContext} ctx
+ * @param {string} label
+ * @param {boolean} narrow
+ * @param {object} advisory
+ * @param {object|null} warn
+ * @returns {string}
+ */
+function renderApiAdvisorLine(ctx, label, narrow, advisory, warn) {
+  const refs = ctx.apiWindowRefs;
+  const isVertex = ctx.runtimeMode?.backend === 'vertex-ai' || ctx.authProvider === 'vertex';
+  const conf = advisory.confidence ?? 'low';
+  const confStr = `conf:${conf}`;
+
+  // $/h burn rate
+  const durationMin = ctx.tokenStats?.durationMin ?? 0;
+  const sessionCostUsd = refs?.sessionCostUsd ?? 0;
+  const telemetryAuthority = ctx.vertexTelemetry?.telemetryAuthority ?? ctx.runtimeMode?.telemetryAuthority;
+  const apiBacked = !isVertex || telemetryAuthority === 'vertex-api';
+  const metricsBacked = isVertex && telemetryAuthority === 'vertex-metrics-estimate';
+  const vertexApiMissing = isVertex && !apiBacked && !metricsBacked;
+  const vertex5hCost = Number.isFinite(ctx.vertexTelemetry?.fiveHour?.costUsd) && ctx.vertexTelemetry.fiveHour.costUsd >= 0
+    ? ctx.vertexTelemetry.fiveHour.costUsd
+    : null;
+  const vertex7dCost = Number.isFinite(ctx.vertexTelemetry?.sevenDay?.costUsd) && ctx.vertexTelemetry.sevenDay.costUsd >= 0
+    ? ctx.vertexTelemetry.sevenDay.costUsd
+    : null;
+  const costPerHour = isVertex
+    ? (vertex5hCost != null
+      ? (vertex5hCost / 5)
+      : (vertex7dCost != null ? (vertex7dCost / (7 * 24)) : null))
+    : (durationMin > 0 ? (sessionCostUsd / durationMin) * 60 : null);
+  const rateStr = isVertex
+    ? ((apiBacked && costPerHour != null)
+      ? `${dim('$')}${costPerHour >= 1 ? costPerHour.toFixed(1) : costPerHour.toFixed(2)}${dim('/h')}`
+      : (metricsBacked ? yellow('metrics only') : dim('--/h')))
+    : (costPerHour != null && costPerHour > 0
+      ? `${dim('$')}${costPerHour >= 1 ? costPerHour.toFixed(1) : costPerHour.toFixed(2)}${dim('/h')}`
+      : dim('--/h'));
+
+  // Burn velocity vs baseline
+  const ref5h = refs?.ref5hCostUsd;
+  let burnSignal = '';
+  if (!isVertex && ref5h && sessionCostUsd > 0 && durationMin > 0) {
+    const projectedHourly = costPerHour ?? 0;
+    // What hourly rate would exhaust the 5h reference in exactly 5h?
+    const refHourly = ref5h / 5;
+    const ratio = refHourly > 0 ? projectedHourly / refHourly : 0;
+    if (ratio >= 2.5) {
+      burnSignal = ` ${red(`burn ${ratio.toFixed(1)}×ref`)}`;
+    } else if (ratio >= 1.5) {
+      burnSignal = ` ${yellow(`burn ${ratio.toFixed(1)}×ref`)}`;
+    }
+  }
+
+  // Action badge (reuse from the normal advisory)
+  const config = SIGNAL_CONFIG[advisory.signal] ?? SIGNAL_CONFIG.nominal;
+  const warmingUp = advisory.confidence === 'low' && (advisory.tier ?? 'ok') === 'ok';
+  const baseText = advisory.action ?? config.defaultLabel;
+  const text = warmingUp ? `${baseText} — warming up` : baseText;
+  const compactVertexAction = isVertex && !apiBacked
+    ? renderActionBadge(config, metricsBacked ? 'use token metrics' : 'collect api-cost')
+    : null;
+  const rawAction = compactVertexAction ?? (warmingUp
+    ? dim(`~ ${text}`)
+    : renderActionBadge(config, text));
+  const actionBadge = truncateToWidth(rawAction, 26);
+
+  if (narrow) {
+    const warnStr = warn && !isDuplicateVertexTelemetryWarning(warn, vertexApiMissing)
+      ? `${SEP}${yellow(`△ ${warn.message}`)}`
+      : '';
+    return `${dim(label)} ${rateStr}${burnSignal}${SEP}${actionBadge}${warnStr}`;
+  }
+
+  // Wide: two rows
+  const sessionStr = isVertex
+    ? (apiBacked && vertex5hCost != null
+      ? dim(`5h:${formatApiCostInline(vertex5hCost, false)}`)
+      : dim(metricsBacked ? '5h:metrics-only' : '5h:--'))
+    : (refs
+      ? dim(`session:${formatApiCostInline(refs.sessionCostUsd, false)}`)
+      : dim('session:--'));
+  const ref7dStr = isVertex
+    ? (apiBacked && vertex7dCost != null
+      ? dim(`7d:${formatApiCostInline(vertex7dCost, false)}`)
+      : dim(metricsBacked ? '7d:metrics-only' : '7d:--'))
+    : (refs?.ref7dCostUsd
+      ? dim(`7d:${formatApiCostInline(refs.ref7dCostUsd, false)}`)
+      : dim('7d:--'));
+
+  const row1 = `${dim(label)} ${rateStr}${burnSignal}${SEP}${actionBadge}${SEP}${dim(confStr)}`;
+  const telemetry = isVertex
+    ? (apiBacked
+      ? dim(`billing:api ${ctx.vertexTelemetry?.dataMaturity?.state ?? 'authoritative'}`)
+      : metricsBacked
+        ? yellow(`billing:metrics ${ctx.vertexTelemetry?.dataMaturity?.state ?? 'metrics_reference'}`)
+      : dim('billing:missing'))
+    : dim('cost mode');
+  const labelPad = dim(' '.repeat(padLabel('Advisor', false).length));
+  const row2 = `${labelPad} ${sessionStr}${SEP}${ref7dStr}${SEP}${telemetry}`;
+  const row3 = warn && !isDuplicateVertexTelemetryWarning(warn, vertexApiMissing)
+    ? `${labelPad} ${truncateToWidth(yellow(`△ ${warn.message}`), 64)}`
+    : null;
+
+  return row3 ? `${row1}\n${row2}\n${row3}` : `${row1}\n${row2}`;
+}
+
+function isDuplicateVertexTelemetryWarning(warn, vertexApiMissing) {
+  if (!vertexApiMissing || !warn?.message) return false;
+  return /api|telemetry|dashboard|console/i.test(warn.message);
+}
+
+/** Format a USD value for inline use (no `~` prefix, compact) */
+function formatApiCostInline(cost, estimated = false) {
+  if (!Number.isFinite(cost) || cost < 0) return '--';
+  if (cost === 0) return '$0.00';
+  const prefix = estimated ? '~' : '';
+  if (cost >= 10)   return `${prefix}$${cost.toFixed(0)}`;
+  if (cost >= 1)    return `${prefix}$${cost.toFixed(1)}`;
+  if (cost >= 0.01) return `${prefix}$${cost.toFixed(2)}`;
+  return '<$0.01';
+}

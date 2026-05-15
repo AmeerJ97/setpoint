@@ -1,5 +1,5 @@
 /**
- * Token bucketing for the `setpoint context` CLI.
+ * Token bucketing for the `claude-ops context` CLI.
  *
  * Native /context (Claude Code 2.1.111+) renders an authoritative bucket
  * grid that we cannot read programmatically — no flag, no JSON dump, only

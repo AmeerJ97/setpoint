@@ -1,11 +1,11 @@
 /**
- * `setpoint demo` — render a sample HUD in every color mode + glyph
+ * `claude-ops demo` — render a sample HUD in every color mode + glyph
  * policy, stacked vertically. Lets a user see instantly whether their
  * terminal supports sparklines, octant bars, and truecolor — and
  * which mode looks best in their theme.
  *
  * Doubles as README marketing material: the output is a compact
- * "what setpoint can look like" slide.
+ * "what claude-ops can look like" slide.
  */
 
 import { render } from '../display/renderer.js';
@@ -31,6 +31,16 @@ function sampleContext(sessionLabel) {
       },
       cwd: '/tmp',
       transcript_path: '',
+    },
+    mode: 'max',
+    authProvider: 'subscription',
+    billingSignal: 'quota-window',
+    runtimeMode: {
+      mode: 'max',
+      authProvider: 'subscription',
+      billingSignal: 'quota-window',
+      backend: 'anthropic-pro',
+      telemetryAuthority: 'server-rate-limits',
     },
     usageData: {
       fiveHour: 62, sevenDay: 38,
@@ -87,12 +97,12 @@ const MODES = [
     mode: 'ansi256', palette: 'cividis', env: {} },
   { heading: 'ansi16 (legacy 3-band fallback)',
     mode: 'ansi16', palette: 'cividis', env: {} },
-  { heading: 'none (NO_COLOR / SETPOINT_PLAIN / non-TTY)',
+  { heading: 'none (NO_COLOR / CLAUDE_OPS_PLAIN / non-TTY)',
     mode: 'none', palette: 'cividis', env: {} },
-  { heading: 'SETPOINT_PLAIN=1 (ASCII-only glyphs)',
-    mode: 'none', palette: 'cividis', env: { SETPOINT_PLAIN: '1' } },
-  { heading: 'SETPOINT_NERD=1 (opt-in Nerd Font glyphs)',
-    mode: 'truecolor', palette: 'cividis', env: { SETPOINT_NERD: '1' } },
+  { heading: 'CLAUDE_OPS_PLAIN=1 (ASCII-only glyphs)',
+    mode: 'none', palette: 'cividis', env: { CLAUDE_OPS_PLAIN: '1' } },
+  { heading: 'CLAUDE_OPS_NERD=1 (opt-in Nerd Font glyphs)',
+    mode: 'truecolor', palette: 'cividis', env: { CLAUDE_OPS_NERD: '1' } },
 ];
 
 const BOLD = '\x1b[1m';
@@ -100,14 +110,14 @@ const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 
 export function main() {
-  process.stdout.write(`${BOLD}setpoint demo${RESET}  ${DIM}— one HUD, every render mode${RESET}\n`);
-  process.stdout.write(`${DIM}Pick the one that looks right in your terminal. Set ${RESET}SETPOINT_PALETTE${DIM}/${RESET}SETPOINT_PLAIN${DIM}/${RESET}SETPOINT_NERD${DIM} to lock it in.${RESET}\n\n`);
+  process.stdout.write(`${BOLD}claude-ops demo${RESET}  ${DIM}— one HUD, every render mode${RESET}\n`);
+  process.stdout.write(`${DIM}Pick the one that looks right in your terminal. Set ${RESET}CLAUDE_OPS_PALETTE${DIM}/${RESET}CLAUDE_OPS_PLAIN${DIM}/${RESET}CLAUDE_OPS_NERD${DIM} to lock it in.${RESET}\n\n`);
 
   const savedEnv = { ...process.env };
 
   for (const { heading, mode, palette, env } of MODES) {
     // Tweak env for this iteration; glyph cache must be busted too.
-    for (const k of ['SETPOINT_PLAIN', 'SETPOINT_NERD', 'SETPOINT_PALETTE', 'NO_COLOR']) {
+    for (const k of ['CLAUDE_OPS_PLAIN', 'CLAUDE_OPS_NERD', 'CLAUDE_OPS_PALETTE', 'NO_COLOR']) {
       delete process.env[k];
     }
     Object.assign(process.env, env);

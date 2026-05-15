@@ -1,5 +1,5 @@
 [Unit]
-Description=Claude HUD Daily Advisor
+Description=Claude Ops Daily Advisor
 
 [Service]
 Type=oneshot

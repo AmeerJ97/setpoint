@@ -1,4 +1,4 @@
-# **Setpoint HUD v2 — Research Report**
+# **Claude Ops HUD v2 — Research Report**
 
 ## **0\. Corrections to the brief**
 
@@ -20,7 +20,7 @@ The tengu\_ prefix denotes internal GrowthBook feature flags utilized by Anthrop
 
 An exhaustive analysis of leaked source data, GitHub issues, and configuration dumps reveals the exact mechanical nature of these flags. The guard targets proposed in the brief are generally accurate but require deeper justification and the addition of newly discovered toggles.
 
-The verbosity of the terminal interface is heavily regulated by tengu\_sotto\_voce and tengu\_swann\_brevity. Introduced server-side around version 2.1.105, these flags activate a "focused" rendering mode that aggressively collapses the display of Model Context Protocol (MCP) tool calls.12 Rather than displaying the full tool signature and inline parameter values, the output is stripped down to the generic server namespace. For users managing multiple MCP servers, this obscures critical data (e.g., the specific SQL query passed to a database plugin). Setpoint's current guard targets of false and "" respectively are absolutely vital for maintaining developer observability.
+The verbosity of the terminal interface is heavily regulated by tengu\_sotto\_voce and tengu\_swann\_brevity. Introduced server-side around version 2.1.105, these flags activate a "focused" rendering mode that aggressively collapses the display of Model Context Protocol (MCP) tool calls.12 Rather than displaying the full tool signature and inline parameter values, the output is stripped down to the generic server namespace. For users managing multiple MCP servers, this obscures critical data (e.g., the specific SQL query passed to a database plugin). The current Claude Ops guard targets of false and "" respectively are absolutely vital for maintaining developer observability.
 
 Similarly, tengu\_summarize\_tool\_results and its newer counterpart tengu\_marble\_whisper dictate whether raw tool output reaches the primary TTY stdout.13 When set to true, these flags suppress inline diffs and bash command outputs, offloading the data entirely to the detailed transcript overlay accessible only via an interactive keybind. The main view is left functionally blind, displaying only abstract status indicators. Guarding these at false is non-negotiable for a transparent workflow.
 
@@ -97,13 +97,13 @@ Subscription tiers fundamentally alter the capacity of these buckets but do not 
 
 ### **2.1 Best-in-class TUI reference set**
 
-Best-in-class terminal UI (TUI) tools such as btop, k9s, zellij, and lazygit universally reject the static, text-heavy paradigm currently employed by setpoint v1. These applications achieve high information density and exceptional readability through immediate-mode reactive rendering architectures 25 and distinct spatial segregation.
+Best-in-class terminal UI (TUI) tools such as btop, k9s, zellij, and lazygit universally reject the static, text-heavy paradigm currently employed by claude-ops v1. These applications achieve high information density and exceptional readability through immediate-mode reactive rendering architectures 25 and distinct spatial segregation.
 
 First, these tools utilize spatial quadrants to isolate independent data streams, ensuring that the eye can instantly locate specific metrics (e.g., CPU load vs. memory allocation in htop) without scanning through dense text. Second, they employ progressive disclosure. A highly optimized observability interface does not display nominal telemetry. If a background process is functioning perfectly, it remains hidden, auto-expanding into view only when a predefined threshold is breached.
 
 Finally, modern TUIs rely heavily on high-density data encoding. Rather than printing raw integers, they leverage Unicode half-block, eighth-block, and braille matrices to draw continuous time-series graphs entirely within a single terminal row.26 This allows the user to perceive velocity and trend—not just current status—at a sub-second glance.
 
-### **2.2 Per-line critique of setpoint v1**
+### **2.2 Per-line critique of claude-ops v1**
 
 The current 8-line layout at 80 characters dictates a spatial budget of 640 characters. Dedicating nearly 30% of this real estate to static labels (e.g., the words "Model", "Context", "Usage") represents a critical failure in UI density.
 
@@ -192,7 +192,7 @@ The fusion engine evaluates each signal independently to generate Boolean trigge
 
 ### **3.3 Competitor advisor comparison**
 
-An evaluation of the current ecosystem reveals significant gaps that Setpoint can exploit, provided it adopts the mathematical rigor of its most advanced competitors.
+An evaluation of the current ecosystem reveals significant gaps that Claude Ops can exploit, provided it adopts the mathematical rigor of its most advanced competitors.
 
 | Tool | Architectural Philosophy | Superior Implementations | Strategic Gaps |
 | :---- | :---- | :---- | :---- |
@@ -200,7 +200,7 @@ An evaluation of the current ecosystem reveals significant gaps that Setpoint ca
 | **ccusage** | Retrospective CLI data analysis and JSONL reporting.40 | Integrates offline pricing caches and aggregates data into highly readable daily/monthly structures.40 | Lacks real-time predictive intelligence; cannot warn the user mid-session before limits are breached. |
 | **ccstatusline & CCometixLine** | Lightweight status bar integration. | Basic token and cost tracking with minimal footprint.41 | Devoid of anomaly detection, predictive mathematics, or systemic guard rails. |
 
-To achieve dominance, Setpoint must surgically extract the percentile-based limit prediction mathematics pioneered by Claude-Code-Usage-Monitor and graft them into its own active, zero-dependency anomaly engine.
+To achieve dominance, Claude Ops must surgically extract the percentile-based limit prediction mathematics pioneered by Claude-Code-Usage-Monitor and graft them into its own active, zero-dependency anomaly engine.
 
 ### **3.4 Cost metric recommendation**
 
@@ -286,7 +286,7 @@ Therefore, the absolute maximum allowable latency for the guard—encompassing t
 
 ### **5.1 Threshold critique per existing rule**
 
-The static thresholds deployed in setpoint v1 are fundamentally inadequate for a dynamic LLM environment.
+The static thresholds deployed in claude-ops v1 are fundamentally inadequate for a dynamic LLM environment.
 
 * **Token Spike (\>50K)**: Naive and context-blind. A 50K token output is nominal when Opus 4.7 is reading a medium-sized codebase, but represents a catastrophic failure if Haiku is simply fixing a typo. Spikes must be calculated relative to the rolling session average.  
 * **Stale Session (4 hours without compaction)**: Arbitrary. Context deterioration is a function of token turnover and conversational depth, not physical wall-clock time.  
@@ -332,32 +332,32 @@ A control loop that constantly screams at the user will be ignored. Anomalies mu
 
 ### **5.5 Prior art from dev-tool telemetry**
 
-The gold standard for normalized thresholding is found in htop's load average coloring, which scales gracefully from green to yellow to red based dynamically on the system's CPU core count, rather than a hardcoded integer. Furthermore, modern Git telemetry tools such as lazygit utilize background asynchronous fetching to continuously update status bars without ever blocking the primary UI thread. Setpoint must adopt this asynchronous polling architecture to ensure the critical 300ms render debounce cycle is never interrupted by a heavy SQLite query.
+The gold standard for normalized thresholding is found in htop's load average coloring, which scales gracefully from green to yellow to red based dynamically on the system's CPU core count, rather than a hardcoded integer. Furthermore, modern Git telemetry tools such as lazygit utilize background asynchronous fetching to continuously update status bars without ever blocking the primary UI thread. Claude Ops must adopt this asynchronous polling architecture to ensure the critical 300ms render debounce cycle is never interrupted by a heavy SQLite query.
 
 ## **6\. Ecosystem & positioning**
 
 ### **6.1 Tool-by-tool comparison matrix**
 
-A deep-dive comparison against the rapidly evolving ecosystem highlights Setpoint's unique strategic advantages and critical deficiencies.
+A deep-dive comparison against the rapidly evolving ecosystem highlights Claude Ops' unique strategic advantages and critical deficiencies.
 
-| Tool | Core Architectural Philosophy | Superior Implementations | What Setpoint Must Adopt |
+| Tool | Core Architectural Philosophy | Superior Implementations | What Claude Ops Must Adopt |
 | :---- | :---- | :---- | :---- |
 | **Claude-Code-Usage-Monitor** | Real-time monitoring with advanced Rich UI Dashboards.24 | ML-based P90 prediction, intelligent dynamic limit detection, automatic terminal background parsing.24 | The percentile-based limit prediction algorithms to replace linear math. |
 | **ccusage** | Retrospective CLI reporting and cost tracking.40 | Offline pricing cache execution, granular daily/monthly historical aggregations.40 | Local SQLite/JSONL historical ingestion for long-term project baselining. |
 | **Claudix** | Full IDE integration (specifically VSCode).43 | Rewind browser for file checkpointing, graphical memory tree visualization.44 | Direct integration with .claude/settings.json to monitor project-level constraints. |
-| **better-ccflare** | Highly comprehensive web-UI metrics dashboard.43 | Frictionless Docker deployment and extended provider support.43 | N/A; Setpoint must remain terminal-native to preserve operator flow. |
+| **better-ccflare** | Highly comprehensive web-UI metrics dashboard.43 | Frictionless Docker deployment and extended provider support.43 | N/A; Claude Ops must remain terminal-native to preserve operator flow. |
 
-Setpoint's unique and overwhelming advantage remains its Active Guarding and inline Anomaly Engine. Competitors are entirely passive observers. By aggressively upgrading the intelligence layer, Setpoint transitions from a passive usage monitor into an active, protective Copilot.
+Claude Ops' unique and overwhelming advantage remains its Active Guarding and inline Anomaly Engine. Competitors are entirely passive observers. By aggressively upgrading the intelligence layer, Claude Ops transitions from a passive usage monitor into an active, protective Copilot.
 
 ### **6.2 Anthropic-official directions to track**
 
 Anthropic is aggressively expanding the capabilities of the Hooks API, signaling a clear architectural shift away from basic scripting toward deep event integration.7 The architecture now supports comprehensive lifecycle events including SessionStart, PreToolUse, SubagentStart, and PermissionRequest.8
 
-The strategic direction is unmistakable: the ecosystem is migrating away from retroactive JSONL transcript tailing and toward active Hook interception. Setpoint's analytics daemon must migrate to this architecture immediately. By intercepting these hooks directly, the control loop guarantees 0ms latency on event detection and gains the unprecedented ability to actively block pathological tool calls *before* the model executes them and bills the API.
+The strategic direction is unmistakable: the ecosystem is migrating away from retroactive JSONL transcript tailing and toward active Hook interception. The Claude Ops analytics daemon must migrate to this architecture immediately. By intercepting these hooks directly, the control loop guarantees 0ms latency on event detection and gains the unprecedented ability to actively block pathological tool calls *before* the model executes them and bills the API.
 
 ### **6.3 Lessons from paid / closed-source tools**
 
-Evaluating paid, closed-source AI engineering environments (such as Cursor, Windsurf, or GitHub Copilot) reveals a profound UX paradigm: they intentionally obscure raw telemetry. These platforms focus entirely on user intent and perceived value. They do not display "Bytes of Context Transferred" or "Tokens Consumed"; they display "Time Saved," "Suggestions Accepted," and "Confidence." Setpoint should borrow this abstraction layer specifically for its Casual layout (§2.3), fusing complex variables into a unified "Session Health" index rather than forcing the developer to parse raw API telemetry.
+Evaluating paid, closed-source AI engineering environments (such as Cursor, Windsurf, or GitHub Copilot) reveals a profound UX paradigm: they intentionally obscure raw telemetry. These platforms focus entirely on user intent and perceived value. They do not display "Bytes of Context Transferred" or "Tokens Consumed"; they display "Time Saved," "Suggestions Accepted," and "Confidence." Claude Ops should borrow this abstraction layer specifically for its Casual layout (§2.3), fusing complex variables into a unified "Session Health" index rather than forcing the developer to parse raw API telemetry.
 
 ## **7\. Implementation-level technical decisions**
 
@@ -402,11 +402,11 @@ The architecture must be consolidated into a **Single Core Daemon** pattern, ide
 
 ## **8\. Questions AJ should have asked but didn't**
 
-**1\. Is the statusLine.command paradigm a dead end?** Yes, potentially. Your entire architecture is optimizing a retroactive display—telling the developer what just happened. Anthropic's rapid expansion of the Hooks API allows for *preventative* control. Instead of merely drawing a warning that the R:E ratio has collapsed, Setpoint should inject a PreToolUse hook that intercepts a dangerous full-file Write command, evaluates the current ratio, and automatically returns a PermissionDenied payload. This forces the model to read the file first, effectively hard-coding quality control into the model's environment.7
+**1\. Is the statusLine.command paradigm a dead end?** Yes, potentially. Your entire architecture is optimizing a retroactive display—telling the developer what just happened. Anthropic's rapid expansion of the Hooks API allows for *preventative* control. Instead of merely drawing a warning that the R:E ratio has collapsed, Claude Ops should inject a PreToolUse hook that intercepts a dangerous full-file Write command, evaluates the current ratio, and automatically returns a PermissionDenied payload. This forces the model to read the file first, effectively hard-coding quality control into the model's environment.7
 
 **2\. How do peak-hour multipliers destroy budget tracking?** You asked extensively about projecting the 5h/7d limits, but you completely missed the silent variable pricing introduced in March. Anthropic actively accelerates token burn during peak US business hours (5 AM–11 AM PT).3 Basic linear math based strictly on token volume will falsely predict your time-to-exhaustion. The HUD must explicitly detect the current time window, determine if peak multipliers are active, and apply dynamic mathematical weighting to its TTE calculations. Failure to do this means the HUD will fail exactly when the developer relies on it most.
 
-**3\. Are we ignoring log bloat destroying historical intelligence?** The daily timer looks at directories exceeding 50MB, but Claude Code's internal cleanupPeriodDays setting defaults to 30 (or 20 in some distributions).14 If Setpoint's new advisor relies heavily on historical P90 percentile baselining, Claude Code will automatically delete the very logs Setpoint requires to calculate its intelligence. Setpoint must establish an independent, durable archive (the DuckDB layer) and ingest the transcripts *before* Claude Code's internal garbage collection purges them forever.
+**3\. Are we ignoring log bloat destroying historical intelligence?** The daily timer looks at directories exceeding 50MB, but Claude Code's internal cleanupPeriodDays setting defaults to 30 (or 20 in some distributions).14 If the new Claude Ops advisor relies heavily on historical P90 percentile baselining, Claude Code will automatically delete the very logs Claude Ops requires to calculate its intelligence. Claude Ops must establish an independent, durable archive (the DuckDB layer) and ingest the transcripts *before* Claude Code's internal garbage collection purges them forever.
 
 #### **Works cited**
 

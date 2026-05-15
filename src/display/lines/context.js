@@ -8,7 +8,7 @@
  * "where compaction trips" without conflating them.
  */
 import { getContextPercent, getBufferedPercent, getTotalTokens } from '../../data/stdin.js';
-import { octantBar, getContextColor, RESET, dim, cyan, green, yellow, red } from '../colors.js';
+import { octantBar, getContextColor, RESET, dim } from '../colors.js';
 import { getAdaptiveBarWidth } from '../terminal.js';
 import { formatTokens, padLabel, padVisualEnd } from '../format.js';
 
@@ -42,19 +42,6 @@ export function renderContextLine(ctx) {
     ? dim(`(${formatTokens(total)}/${formatTokens(size)})`)
     : '';
 
-  // Token breakdown — always show when available
-  const usage = ctx.stdin.context_window?.current_usage;
-  let breakdown = '';
-  if (usage && !narrow) {
-    const parts = [];
-    const input = usage.input_tokens ?? 0;
-    const cacheR = usage.cache_read_input_tokens ?? 0;
-    const cacheC = usage.cache_creation_input_tokens ?? 0;
-    if (input > 0) parts.push(`in:${formatTokens(input)}`);
-    if (cacheR + cacheC > 0) parts.push(`cache:${formatTokens(cacheR + cacheC)}`);
-    if (parts.length > 0) breakdown = '  ' + dim(parts.join(' '));
-  }
-
   // Buffered overlay: only show when the autocompact buffer adds enough
   // to materially shift the picture (≥3 pp gap), or once raw is in the
   // warning zone where compaction is imminent.
@@ -67,29 +54,9 @@ export function renderContextLine(ctx) {
       : dim(`⊕buf:${bufferedPercent}%`);
   }
 
-  // RTK savings — belongs on Context (cache-related), not Tokens (burn).
-  // When the RTK state file is stale (>10min), dim the segment so the
-  // reader knows the number may not reflect current activity.
-  let rtkNote = '';
-  const rtk = ctx.rtkStats;
-  if (rtk && rtk.totalSaved > 0 && !narrow) {
-    const pct = Math.round(rtk.avgSavingsPct);
-    const savedStr = formatTokens(rtk.totalSaved);
-    const ageMs = rtk.mtimeMs ? Date.now() - rtk.mtimeMs : 0;
-    const stale = Number.isFinite(ageMs) && ageMs > 10 * 60_000;
-    if (stale) {
-      rtkNote = dim(`rtk:${savedStr}↓${pct}%`);
-    } else {
-      const rtkColor = pct >= 80 ? green : pct >= 50 ? yellow : red;
-      rtkNote = rtkColor(`rtk:${savedStr}↓${pct}%`);
-    }
-  }
-
   const primary = padVisualEnd(`${bar} ${pctDisplay}  ${tokenDisplay}`, PRIMARY_COL_WIDTH);
   const secondaryParts = [];
-  if (breakdown) secondaryParts.push(breakdown.trim());
   if (bufferedNote) secondaryParts.push(bufferedNote);
-  if (rtkNote) secondaryParts.push(rtkNote);
   const secondary = secondaryParts.join('  ');
 
   return secondary

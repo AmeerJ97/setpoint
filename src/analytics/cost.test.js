@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { calculateCost, resolvePricing, costWeightedBurnRate, ewmaBurnRate, perTokenWeights } from './cost.js';
+import { calculateBillableCost, calculateCost, resolvePricing, costWeightedBurnRate, ewmaBurnRate, perTokenWeights } from './cost.js';
 import { resetDefaultsCache } from '../data/defaults.js';
 
 beforeEach(() => {
-  delete process.env.CLAUDE_HUD_PRICING_FILE;
-  delete process.env.CLAUDE_HUD_DEFAULTS_FILE;
+  delete process.env.CLAUDE_OPS_PRICING_FILE;
+  delete process.env.CLAUDE_OPS_DEFAULTS_FILE;
   resetDefaultsCache();
 });
 
@@ -21,10 +21,13 @@ test('resolvePricing matches exact model IDs from defaults.json', () => {
   assert.ok(sonnet.output < opus.output, 'sonnet output < opus output');
 });
 
-test('resolvePricing falls back to defaultModel for unknown names', () => {
+test('resolvePricing marks unknown named models instead of fake default pricing', () => {
   const unknown = resolvePricing('some-future-model-999');
-  const defaultPricing = resolvePricing();
-  assert.deepEqual(unknown, defaultPricing);
+  assert.equal(unknown.known, false);
+  assert.equal(unknown.modelId, 'some-future-model-999');
+  assert.equal(unknown.fallback, 'unknown');
+  assert.equal(unknown.input, 0);
+  assert.equal(unknown.output, 0);
 });
 
 test('resolvePricing matches display-name variants (case + spaces)', () => {
@@ -53,6 +56,26 @@ test('calculateCost with no model uses defaultModel', () => {
 test('calculateCost returns 0 for null stats', () => {
   assert.equal(calculateCost(null), 0);
   assert.equal(calculateCost(undefined), 0);
+});
+
+test('calculateCost remains generation-only while billable estimate includes cache', () => {
+  const stats = {
+    totalInput: 1_000_000,
+    totalOutput: 1_000_000,
+    totalCacheCreate: 1_000_000,
+    totalCacheRead: 1_000_000,
+  };
+  assert.equal(calculateCost(stats, 'claude-opus-4-7'), 30);
+  assert.equal(calculateBillableCost(stats, 'claude-opus-4-7'), 36.75);
+});
+
+test('calculateBillableCost uses 1h cache-write pricing when TTL split exists', () => {
+  const cost = calculateBillableCost({
+    totalCacheCreate: 2_000_000,
+    totalCacheCreate5m: 1_000_000,
+    totalCacheCreate1h: 1_000_000,
+  }, 'claude-opus-4-7');
+  assert.equal(cost, 16.25);
 });
 
 test('perTokenWeights returns USD-per-token weights for the named model', () => {
@@ -103,8 +126,8 @@ test('ewmaBurnRate biases toward recent values with α=0.2', () => {
   assert.equal(smoothed, 140);
 });
 
-test('CLAUDE_HUD_PRICING_FILE overrides pricing', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'claude-hud-pricing-'));
+test('CLAUDE_OPS_PRICING_FILE overrides pricing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'claude-ops-pricing-'));
   const file = join(dir, 'pricing.json');
   writeFileSync(file, JSON.stringify({
     pricing: {
@@ -115,7 +138,7 @@ test('CLAUDE_HUD_PRICING_FILE overrides pricing', () => {
     },
   }));
 
-  process.env.CLAUDE_HUD_PRICING_FILE = file;
+  process.env.CLAUDE_OPS_PRICING_FILE = file;
   resetDefaultsCache();
 
   try {

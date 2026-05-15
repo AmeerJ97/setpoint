@@ -279,6 +279,7 @@ fn set_nested_bool(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::categories;
     use std::io::Write;
 
     fn write_initial(path: &Path, value: &Value) {
@@ -353,9 +354,60 @@ mod tests {
         assert_eq!(v["bridge"]["enabled"], json!(false));
     }
 
+    #[test]
+    fn vertex_related_unowned_fields_are_preserved() {
+        let dir = tempdir();
+        let path = dir.join("claude.json");
+        write_initial(
+            &path,
+            &json!({
+                "vertex": { "region": "us-east5", "project": "project-a" },
+                "cachedGrowthBookFeatures": {
+                    "tengu_swann_brevity": "short"
+                }
+            }),
+        );
+
+        let r = apply_all(&path, &["brevity"]).unwrap();
+        assert!(r.changed.iter().any(|k| k == "tengu_swann_brevity"));
+        let v = read_back(&path);
+        assert_eq!(v["vertex"]["region"], json!("us-east5"));
+        assert_eq!(v["vertex"]["project"], json!("project-a"));
+    }
+
+    #[test]
+    fn checked_in_manifest_matches_rust_override_surface() {
+        let manifest: Value = serde_json::from_str(include_str!("../../../../config/guard-targets.json"))
+            .expect("guard-targets.json parses");
+        let obj = manifest.as_object().expect("manifest object");
+
+        assert_eq!(obj.len(), categories::all().len());
+        for c in categories::all() {
+            assert!(obj.contains_key(c.name), "manifest missing {}", c.name);
+        }
+
+        let truncation = obj["truncation"].as_array().expect("truncation array");
+        let manifest_tools: Vec<&str> = truncation
+            .iter()
+            .map(|v| v["path"].as_array().unwrap().last().unwrap().as_str().unwrap())
+            .collect();
+        assert_eq!(manifest_tools, PEWTER_KESTREL_TOOLS);
+
+        let refresh = obj["refresh_ttl"].as_array().expect("refresh array");
+        let refresh_keys: Vec<&str> = refresh
+            .iter()
+            .map(|v| v["path"].as_array().unwrap().last().unwrap().as_str().unwrap())
+            .collect();
+        assert_eq!(refresh_keys, vec![
+            "tengu_willow_refresh_ttl_hours",
+            "tengu_willow_census_ttl_hours",
+        ]);
+        assert_eq!(obj["bridge"][0]["path"], json!(["bridge", "enabled"]));
+    }
+
     fn tempdir() -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!(
-            "setpoint-guard-test-{}",
+            "claude-ops-guard-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

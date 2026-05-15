@@ -1,7 +1,7 @@
 /**
  * Peak-vs-off-peak burn split over a trailing usage-history window.
  *
- * Split out of src/advisor/index.js so the `setpoint advisor status`
+ * Split out of src/advisor/index.js so the `claude-ops advisor status`
  * drilldown can compute the split without pulling in the whole daily-report
  * pipeline (which reads session JSONLs, guard state, rtk stats, etc.).
  *

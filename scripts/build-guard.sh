@@ -1,12 +1,12 @@
 #!/bin/bash
-# Build the Rust setpoint-guard binary.
+# Build the Rust claude-ops-guard binary.
 #
-# Output: $REPO/src/guard/rust/target/release/setpoint-guard
+# Output: $REPO/src/guard/rust/target/release/claude-ops-guard
 # Falls back gracefully (exit 0, prints a notice) if cargo isn't installed,
 # so the wider install-guard.sh can switch to the bash impl without aborting.
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
 RUST_DIR="${SCRIPT_DIR}/src/guard/rust"
 
 if ! command -v cargo &>/dev/null; then
@@ -15,10 +15,10 @@ if ! command -v cargo &>/dev/null; then
   exit 0
 fi
 
-echo "[build-guard] Building setpoint-guard (release profile)..."
+echo "[build-guard] Building claude-ops-guard (release profile)..."
 ( cd "$RUST_DIR" && cargo build --release --quiet )
 
-BIN="${RUST_DIR}/target/release/setpoint-guard"
+BIN="${RUST_DIR}/target/release/claude-ops-guard"
 if [[ ! -x "$BIN" ]]; then
   echo "[build-guard] ERROR: build succeeded but binary not found at $BIN"
   exit 1

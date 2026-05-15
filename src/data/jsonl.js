@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, ren
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
+import { formatParseError } from './errors.js';
 
 /**
  * Append a single JSON object as a line to a JSONL file.
@@ -16,7 +17,7 @@ export function appendJsonl(filePath, entry) {
 
 /**
  * Read all lines from a JSONL file, parsing each as JSON.
- * Skips malformed lines silently.
+ * Logs malformed lines via formatParseError for diagnostics.
  * @param {string} filePath
  * @returns {object[]}
  */
@@ -25,16 +26,21 @@ export function readJsonl(filePath) {
   try {
     const content = readFileSync(filePath, 'utf8');
     const results = [];
+    let malformedCount = 0;
     for (const line of content.split('\n')) {
       if (!line.trim()) continue;
       try {
         results.push(JSON.parse(line));
       } catch {
-        // skip malformed
+        malformedCount++;
       }
     }
+    if (malformedCount > 0) {
+      formatParseError(`readJsonl: ${malformedCount} malformed line(s) in ${filePath}`);
+    }
     return results;
-  } catch {
+  } catch (err) {
+    formatParseError(`readJsonl: failed to read ${filePath}: ${err.message}`);
     return [];
   }
 }
@@ -90,13 +96,15 @@ export function rotateJsonl(filePath, maxBytes, keepLines) {
     writeFileSync(tmpFile, kept.join('\n') + '\n');
     renameSync(tmpFile, filePath);
     return true;
-  } catch {
+  } catch (err) {
+    formatParseError(`rotateJsonl: rotation failed for ${filePath}: ${err.message}`);
     return false;
   }
 }
 
 /**
  * Read a JSON file, returning null on any error.
+ * Logs the error for diagnostics.
  * @param {string} filePath
  * @returns {object|null}
  */
@@ -104,7 +112,8 @@ export function readJson(filePath) {
   if (!existsSync(filePath)) return null;
   try {
     return JSON.parse(readFileSync(filePath, 'utf8'));
-  } catch {
+  } catch (err) {
+    formatParseError(`readJson: failed to parse ${filePath}: ${err.message}`);
     return null;
   }
 }

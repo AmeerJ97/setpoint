@@ -4,7 +4,7 @@
  *
  * Phase 2: replaces the static effort-matrix ladder with the new engine
  * + adds reasoning-reversals scan + P90 baselines + peak-vs-off-peak
- * burn split. Writes markdown report to ~/.claude/plugins/claude-hud/daily-report.md.
+ * burn split. Writes markdown report to ~/.claude/plugins/claude-ops/daily-report.md.
  */
 import { writeFileSync, mkdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
@@ -22,12 +22,18 @@ import { computePeakSplit } from './peak-split.js';
 import { countReasoningReversals, reversalsPer1k } from './reversals.js';
 import { calculateRates } from '../analytics/rates.js';
 import { computeAdvisory } from '../analytics/advisor.js';
+import { computeApiWindowRefs } from '../analytics/api-cost.js';
+import { computeVertexTelemetry } from '../analytics/vertex-telemetry.js';
+import { runtimeBackend, runtimeTelemetryAuthority } from '../data/mode.js';
 import { findActiveSessions, findSessionJsonl } from '../data/session.js';
+import { filterTrustedHistoryRows, latestTrustedHistoryRow } from '../data/history-safety.js';
 
 async function generateReport() {
   const sessions = readJsonlWindow(TOKEN_STATS_FILE, 7 * 86400_000);
-  const history30d = readJsonlWindow(HISTORY_FILE, 30 * 86400_000);
-  const history7d = readJsonlWindow(HISTORY_FILE, 7 * 86400_000);
+  const history30dRaw = readJsonlWindow(HISTORY_FILE, 30 * 86400_000);
+  const history7dRaw = readJsonlWindow(HISTORY_FILE, 7 * 86400_000);
+  const history30d = filterTrustedHistoryRows(history30dRaw);
+  const history7d = filterTrustedHistoryRows(history7dRaw);
   const rtkStats = readRtkStats();
   const guardStatus = await readGuardStatus();
 
@@ -43,8 +49,8 @@ async function generateReport() {
   // Build a synthetic "current" advisory off the most recent history
   // entry so the daily report reflects the same recommendation engine
   // the live HUD uses.
-  const latest = history7d[history7d.length - 1] ?? null;
-  const recommendation = synthesizeRecommendation(latest, history30d);
+  const latest = latestTrustedHistoryRow(history7dRaw);
+  const recommendation = synthesizeRecommendation(latest, history30d, process.env);
 
   const lines = [
     `# Daily Advisor Report`,
@@ -112,7 +118,7 @@ async function generateReport() {
  * Re-run the engine with the latest history snapshot so the daily
  * report's headline matches what the live HUD is showing.
  */
-function synthesizeRecommendation(latestEntry, history) {
+function synthesizeRecommendation(latestEntry, history, env = process.env) {
   if (!latestEntry) {
     return {
       action: 'no recent history — start a session to generate one',
@@ -122,21 +128,91 @@ function synthesizeRecommendation(latestEntry, history) {
       suggestion: { effort: 'high', model: 'opus' },
     };
   }
-  const fakeUsage = {
-    fiveHour: latestEntry.five_hour_pct ?? 0,
-    sevenDay: latestEntry.seven_day_pct ?? 0,
+
+  const runtimeMode = runtimeModeFromHistory(latestEntry);
+  const isQuotaWindow = latestEntry.billing_signal === 'quota-window'
+    && (latestEntry.five_hour_pct != null || latestEntry.seven_day_pct != null);
+  const usageSnapshot = isQuotaWindow ? {
+    fiveHour: latestEntry.five_hour_pct ?? null,
+    sevenDay: latestEntry.seven_day_pct ?? null,
     fiveHourResetAt: null,
     sevenDayResetAt: null,
-  };
-  const rates = calculateRates(fakeUsage, latestEntry.session_burn_rate ?? 0);
-  const adv = computeAdvisory(rates, fakeUsage, {
+  } : null;
+
+  const tokenStats = tokenStatsFromHistory(latestEntry);
+  const apiWindowRefs = runtimeMode.billingSignal === 'cost-metered'
+    ? computeApiWindowRefs(tokenStats, latestEntry.model ?? null, history, {
+        currentSessionId: latestEntry.session_id ?? null,
+      })
+    : null;
+
+  const vertexApiMaxSnapshotAgeMinutes = Number.isFinite(Number(env.CLAUDE_OPS_VERTEX_API_MAX_AGE_MINUTES))
+    ? Number(env.CLAUDE_OPS_VERTEX_API_MAX_AGE_MINUTES)
+    : undefined;
+
+  const vertexTelemetry = runtimeMode.backend === 'vertex-ai'
+    ? computeVertexTelemetry(tokenStats, history, {
+        currentSessionId: latestEntry.session_id ?? null,
+        vertexApiFile: env.CLAUDE_OPS_VERTEX_API_TELEMETRY_FILE,
+        vertexApiMaxSnapshotAgeMinutes,
+        env,
+      })
+    : null;
+
+  const runtimeModeResolved = runtimeMode.backend === 'vertex-ai' && vertexTelemetry?.telemetryAuthority
+    ? { ...runtimeMode, telemetryAuthority: vertexTelemetry.telemetryAuthority }
+    : runtimeMode;
+
+  const rates = calculateRates(usageSnapshot, latestEntry.session_burn_rate ?? 0);
+  return computeAdvisory(rates, usageSnapshot, {
     history,
-    tokenStats: { burnRate: latestEntry.session_burn_rate ?? 0 },
+    tokenStats,
     contextPercent: latestEntry.context_pct ?? null,
     modelName: latestEntry.model ?? null,
     toolCounts: {},
+    mode: runtimeModeResolved.mode,
+    runtimeMode: runtimeModeResolved,
+    apiWindowRefs,
+    syntheticTelemetry: vertexTelemetry,
   });
-  return adv;
+}
+
+function runtimeModeFromHistory(row) {
+  const authProvider = row.auth_provider ?? 'unknown';
+  const billingSignal = row.billing_signal ?? (row.five_hour_pct != null || row.seven_day_pct != null ? 'quota-window' : 'cost-metered');
+  const backend = row.backend ?? runtimeBackend(authProvider, billingSignal);
+  const telemetryAuthority = row.telemetry_authority ?? runtimeTelemetryAuthority(backend, billingSignal);
+  return {
+    authProvider,
+    billingSignal,
+    mode: row.mode ?? (billingSignal === 'quota-window' ? 'max' : authProvider === 'bedrock' ? 'bedrock' : 'api'),
+    backend,
+    telemetryAuthority,
+  };
+}
+
+function tokenStatsFromHistory(row) {
+  return {
+    burnRate: row.session_burn_rate ?? 0,
+    durationMin: row.duration_min ?? 0,
+    recentTurnsOutput: inferRecentTurnsOutputFromHistoryRow(row),
+    totalInput: row.input_tokens ?? 0,
+    totalOutput: row.output_tokens ?? 0,
+    totalCacheCreate: row.cache_create_tokens ?? 0,
+    totalCacheRead: row.cache_read_tokens ?? 0,
+    apiCalls: row.api_calls ?? 0,
+  };
+}
+
+function inferRecentTurnsOutputFromHistoryRow(row) {
+  const rawTurns = row.recent_turn_count
+    ?? row.turn_count
+    ?? row.turns
+    ?? row.api_calls
+    ?? 0;
+  const count = Math.max(0, Math.floor(Number(rawTurns) || 0));
+  const capped = Math.min(count, 200);
+  return Array(capped).fill(1);
 }
 
 /**

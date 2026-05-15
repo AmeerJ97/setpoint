@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Analytics daemon — long-running background service.
- * Polls active sessions every 15s, writes token stats.
+ * Analytics daemon — on-demand background collector.
+ * Polls active sessions every 30s by default, writes token stats.
  * Writes usage history every 5 minutes.
  * Runs anomaly detection checks.
+ * Exits after idle time unless CLAUDE_OPS_ANALYTICS_KEEPALIVE=1.
  */
 import { findActiveSessions, findSessionJsonl } from '../data/session.js';
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, readdirSync, unlinkSync } from 'node:fs';
@@ -17,10 +18,13 @@ import { costWeightedBurnRate } from './cost.js';
 
 const execFileAsync = promisify(execFile);
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = envMs('CLAUDE_OPS_ANALYTICS_POLL_MS', 30_000, 5_000);
 const HISTORY_INTERVAL_MS = 300_000;
+const RTK_INTERVAL_MS = envMs('CLAUDE_OPS_RTK_POLL_MS', 300_000, 60_000);
+const IDLE_EXIT_MS = envMs('CLAUDE_OPS_ANALYTICS_IDLE_EXIT_MS', 120_000, 30_000);
 
 let lastHistoryWrite = 0;
+const lastRtkPollBySession = new Map();
 
 const RECENT_TURNS_TRACKED = 12;
 
@@ -173,6 +177,15 @@ function poll() {
         signal: 'nominal',
         model,
         effort: 'high',
+        mode: 'daemon',
+        projectPath: r.cwd ?? null,
+        inputTokens: r.totalInput ?? null,
+        outputTokens: r.totalOutput ?? null,
+        cacheCreateTokens: r.totalCacheCreate ?? null,
+        cacheCreate5mTokens: r.totalCacheCreate5m ?? null,
+        cacheCreate1hTokens: r.totalCacheCreate1h ?? null,
+        cacheReadTokens: r.totalCacheRead ?? null,
+        apiCalls: r.apiCalls ?? null,
       });
     }
   }
@@ -185,10 +198,27 @@ function poll() {
   // fire-and-forget and writes into its own session-keyed file inside
   // pollRtk.
   for (const r of results) {
-    pollRtk(r.sid, r.cwd ?? null).catch(() => {});
+    if (rtkPollDue(r.sid, now)) {
+      pollRtk(r.sid, r.cwd ?? null).catch(() => {});
+    }
   }
 
   return results.length;
+}
+
+function rtkPollDue(sessionId, now) {
+  if (process.env.CLAUDE_OPS_DISABLE_RTK === '1') return false;
+  const key = sessionId || 'unknown';
+  const last = lastRtkPollBySession.get(key) ?? 0;
+  if (now - last < RTK_INTERVAL_MS) return false;
+  lastRtkPollBySession.set(key, now);
+  return true;
+}
+
+function envMs(name, fallback, min) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(min, value);
 }
 
 async function pollRtk(sessionId, projectPath) {
@@ -227,17 +257,39 @@ async function pollRtk(sessionId, projectPath) {
 }
 
 function main() {
-  console.log(`[analytics-daemon] Started, polling every ${POLL_INTERVAL_MS / 1000}s`);
-  poll();
+  console.log(`[analytics-daemon] Started on-demand, polling every ${POLL_INTERVAL_MS / 1000}s, idle exit after ${Math.round(IDLE_EXIT_MS / 1000)}s`);
+  let idleSince = null;
 
-  setInterval(() => {
+  const tick = () => {
     try {
       const count = poll();
-      if (count > 0) console.log(`[analytics-daemon] Scanned ${count} session(s)`);
+      if (count > 0) {
+        idleSince = null;
+        console.log(`[analytics-daemon] Scanned ${count} session(s)`);
+        return;
+      }
+      idleSince ??= Date.now();
+      if (shouldExitForIdle({
+        activeCount: count,
+        idleSince,
+        idleExitMs: IDLE_EXIT_MS,
+        keepAlive: process.env.CLAUDE_OPS_ANALYTICS_KEEPALIVE === '1',
+      })) {
+        console.log('[analytics-daemon] No active Claude Code sessions; exiting until the HUD wakes the collector again');
+        process.exit(0);
+      }
     } catch (err) {
       console.error(`[analytics-daemon] Error: ${err.message}`);
     }
-  }, POLL_INTERVAL_MS);
+  };
+
+  tick();
+  setInterval(tick, POLL_INTERVAL_MS);
+}
+
+function shouldExitForIdle({ activeCount, idleSince, now = Date.now(), idleExitMs = IDLE_EXIT_MS, keepAlive = false }) {
+  if (keepAlive || activeCount > 0 || idleSince == null) return false;
+  return now - idleSince >= idleExitMs;
 }
 
 // Only run the daemon loop when invoked directly as a script. Guard prevents
@@ -253,3 +305,5 @@ const isSamePath = (a, b) => {
 if (argvPath && isSamePath(argvPath, scriptPath)) {
   main();
 }
+
+export { shouldExitForIdle };

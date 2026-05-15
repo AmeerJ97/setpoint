@@ -2,12 +2,13 @@
  * Line 4: Tokens — in:42K  out:9.5K  cache:████░░ 69%  burn:211t/m  18calls
  * Now with cache bar visualization and wider spacing.
  */
-import { cyan, dim, getCacheColor, getBurnColor, coloredBar, RESET } from '../colors.js';
+import { cyan, dim, green, yellow, red, getCacheColor, getBurnColor, coloredBar, RESET } from '../colors.js';
 
 const SEP = ` ${dim('│')} `;
-import { formatTokens, padLabel, padVisualEnd } from '../format.js';
+import { formatTokens, formatRate, formatCount, padLabel, padVisualEnd } from '../format.js';
 import { calculateCost, formatCost } from '../../analytics/cost.js';
 import { sparkline } from '../sparkline.js';
+import { inspectPromptCacheConfig } from '../../data/prompt-cache.js';
 
 // Grid anchor shared with Context / Guard / Advisor so the first
 // `│` separator stacks vertically across lines.
@@ -64,7 +65,7 @@ export function renderTokensLine(ctx) {
     ? dim('⎡') + sparkline(turns, narrow ? 5 : 8) + dim('⎤')
     : '';
 
-  const cacheLabel = cacheBasis === 'rolling' ? 'cache' : dim('cache*');
+  const cacheLabel = cacheBasis === 'rolling' ? 'cache' : dim('cache-hist');
   // Honest placeholder when the session has literally no cache activity
   // yet: `cache:--` (dim) instead of `cache:0%`. The latter is a valid
   // reading for a degraded session; conflating the two hides regressions.
@@ -73,6 +74,9 @@ export function renderTokensLine(ctx) {
     ? `${cacheLabel}:${cacheBar} ${cacheColor}${cachePercent}%${RESET}` +
       (ttlSplit ? ` ${dim(ttlSplit)}` : '')
     : dim('cache:--');
+  const nativeCache = formatNativeCacheNote(ctx);
+  const cacheConfigNote = formatPromptCacheConfigNote(ctx);
+  const rtkNote = formatRtkNote(ctx);
 
   const primary = [
     cyan(`in:${inTok}`),
@@ -81,21 +85,89 @@ export function renderTokensLine(ctx) {
     cacheBlock,
   ].join(' ');
 
+  const burnStr = formatRate(burnRate);
   const burnLabel = stats.burnRateStale
-    ? `${burnColor}burn:${Math.round(burnRate)}t/m${RESET}${dim('·stale')}`
-    : `${burnColor}burn:${Math.round(burnRate)}t/m${RESET}`;
+    ? `${burnColor}burn:${burnStr} t/m${RESET}${dim(' · stale')}`
+    : `${burnColor}burn:${burnStr} t/m${RESET}`;
   const secondary = [
+    nativeCache,
+    cacheConfigNote,
+    rtkNote,
     burnLabel,
-    dim(`${apiCalls}calls`),
-  ];
+    ...(apiCalls > 0 ? [dim(`${formatCount(apiCalls)} calls`)] : []),
+  ].filter(Boolean);
 
   // Session cost
-  if (cost > 0) secondary.push(cyan(formatCost(cost)));
+  if (cost > 0 && ctx.billingSignal !== 'cost-metered') secondary.push(cyan(formatCost(cost)));
 
   // R:E quality badge lives on the Guard line (HUD-SPEC §7). Tokens line
   // keeps burn/cost/cache, which is already dense.
 
   return `${dim(label)} ${padVisualEnd(primary, PRIMARY_COL_WIDTH)}${SEP}${secondary.join('  ')}`;
+}
+
+function formatPromptCacheConfigNote(ctx) {
+  const info = ctx.promptCacheConfig ?? inspectPromptCacheConfig(null, process.env, { activeModelId: ctx.stdin?.model?.id ?? ctx.stdin?.model?.display_name });
+  if (info.mode === 'off') return red('cfg:off');
+  if (info.mode === '1h') return green('cfg:1h');
+  return yellow('cfg:5m');
+}
+
+function formatNativeCacheNote(ctx) {
+  const stats = ctx.tokenStats;
+  const current = ctx.stdin?.context_window?.current_usage ?? {};
+  const read = stats ? (stats.totalCacheRead ?? 0) : (current.cache_read_input_tokens ?? 0);
+  const write = stats ? (stats.totalCacheCreate ?? 0) : (current.cache_creation_input_tokens ?? 0);
+  const create5m = stats?.totalCacheCreate5m ?? 0;
+  const create1h = stats?.totalCacheCreate1h ?? 0;
+
+  if (read > 0) {
+    const ttl = formatCacheTtlShort(create5m, create1h);
+    return green(`native:on${ttl ? ` ${ttl}` : ''}`);
+  }
+  if (write > 0) {
+    const ttl = formatCacheTtlShort(create5m, create1h);
+    return yellow(`native:write${ttl ? ` ${ttl}` : ''}`);
+  }
+  if (stats || ctx.stdin?.context_window?.current_usage) return dim('native:idle');
+  return dim('native:unknown');
+}
+
+function formatCacheTtlShort(create5m, create1h) {
+  const total = create5m + create1h;
+  if (total <= 0) return null;
+  const pct5m = Math.round((create5m / total) * 100);
+  if (pct5m >= 98) return '5m';
+  if (pct5m <= 2) return '1h';
+  return `${pct5m}%5m`;
+}
+
+function formatRtkNote(ctx) {
+  const rtk = ctx.rtkStats;
+  const status = ctx.rtkStatus?.state ?? inferRtkState(rtk);
+  if (status === 'disabled') return yellow('rtk:disabled');
+  if (status === 'off') return dim('rtk:off');
+  if (!rtk) return dim(`rtk:${status}`);
+
+  const pct = Math.round(rtk.avgSavingsPct ?? 0);
+  const saved = rtk.totalSaved ?? 0;
+  const savedStr = formatTokens(saved);
+  const detail = saved > 0 ? ` ${savedStr}↓${pct}%` : '';
+
+  if (status === 'stale') return dim(`rtk:stale${saved > 0 ? ` ${savedStr}` : ''}`);
+  if (status === 'saving') {
+    const rtkColor = pct >= 80 ? green : pct >= 50 ? yellow : red;
+    return rtkColor(`rtk:saving${detail}`);
+  }
+  return cyan(`rtk:on${detail}`);
+}
+
+function inferRtkState(rtk) {
+  if (!rtk) return 'off';
+  const ageMs = rtk.mtimeMs ? Date.now() - rtk.mtimeMs : 0;
+  if (Number.isFinite(ageMs) && ageMs > 10 * 60_000) return 'stale';
+  if ((rtk.totalSaved ?? 0) > 0) return 'saving';
+  return 'on';
 }
 
 const ROLLING_CACHE_TURNS = 10;

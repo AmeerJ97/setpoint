@@ -2,8 +2,8 @@
  * Loader for the project-level defaults at config/defaults.json.
  *
  * Precedence:
- *   1. CLAUDE_HUD_PRICING_FILE (absolute path — overrides pricing only)
- *   2. CLAUDE_HUD_DEFAULTS_FILE (absolute path — overrides the whole blob)
+ *   1. CLAUDE_OPS_PRICING_FILE (absolute path — overrides pricing only)
+ *   2. CLAUDE_OPS_DEFAULTS_FILE (absolute path — overrides the whole blob)
  *   3. <repo>/config/defaults.json (checked in)
  *
  * Cached after first successful read. Tests can call resetDefaultsCache().
@@ -33,11 +33,11 @@ function readJsonSafe(path) {
 export function loadDefaults() {
   if (cached) return cached;
 
-  const override = process.env.CLAUDE_HUD_DEFAULTS_FILE?.trim();
+  const override = process.env.CLAUDE_OPS_DEFAULTS_FILE?.trim();
   const base = (override && readJsonSafe(override)) || readJsonSafe(REPO_DEFAULTS) || {};
 
   // Pricing-only override (common case: swap model prices without rebuilding)
-  const pricingOverride = process.env.CLAUDE_HUD_PRICING_FILE?.trim();
+  const pricingOverride = process.env.CLAUDE_OPS_PRICING_FILE?.trim();
   if (pricingOverride) {
     const p = readJsonSafe(pricingOverride);
     if (p) base.pricing = p.pricing ?? p;
@@ -83,5 +83,52 @@ export function getRatesTuning() {
       endHour:    d.rates?.peakHours?.endHour    ?? 11,
       multiplier: d.rates?.peakHours?.multiplier ?? 1.5,
     },
+  };
+}
+
+/**
+ * Get telemetry maturity tuning.
+ * @returns {{ apiRefs: { minSamples: number, minDistinctSessions: number, minOldestAgeMinutes: number }, vertexSynthetic: { minSamples: number, minDistinctSessions: number, minOldestAgeMinutes: number }, vertexApi: { maxSnapshotAgeMinutes: number } }}
+ */
+export function getTelemetryTuning() {
+  const d = loadDefaults();
+  return {
+    apiRefs: {
+      minSamples: d.telemetry?.apiRefs?.minSamples ?? 3,
+      minDistinctSessions: d.telemetry?.apiRefs?.minDistinctSessions ?? 2,
+      minOldestAgeMinutes: d.telemetry?.apiRefs?.minOldestAgeMinutes ?? 30,
+    },
+    vertexSynthetic: {
+      minSamples: d.telemetry?.vertexSynthetic?.minSamples ?? 3,
+      minDistinctSessions: d.telemetry?.vertexSynthetic?.minDistinctSessions ?? 2,
+      minOldestAgeMinutes: d.telemetry?.vertexSynthetic?.minOldestAgeMinutes ?? 30,
+    },
+    vertexApi: {
+      maxSnapshotAgeMinutes: d.telemetry?.vertexApi?.maxSnapshotAgeMinutes ?? 20,
+    },
+  };
+}
+
+/**
+ * Get hook behavior defaults.
+ * @returns {{ mode: 'advisory'|'blocking', preCompactSnapshots: boolean }}
+ */
+export function getHookDefaults() {
+  const d = loadDefaults();
+  return {
+    mode: d.hooks?.mode === 'blocking' ? 'blocking' : 'advisory',
+    preCompactSnapshots: d.hooks?.preCompactSnapshots === true,
+  };
+}
+
+/**
+ * Get experimental-tool gates.
+ * @returns {{ scan: boolean, consolidate: boolean }}
+ */
+export function getExperimentalDefaults() {
+  const d = loadDefaults();
+  return {
+    scan: d.experimental?.scan === true,
+    consolidate: d.experimental?.consolidate === true,
   };
 }

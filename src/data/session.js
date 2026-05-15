@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSIONS_DIR, PROJECTS_DIR } from './paths.js';
 
@@ -59,4 +59,55 @@ export function findSessionJsonl(sessionId) {
     // PROJECTS_DIR inaccessible
   }
   return null;
+}
+
+/**
+ * Find the newest session JSONL, preferring the current cwd's project slug
+ * when possible. Used as a fallback when active-session metadata is stale.
+ *
+ * @param {string} [cwd]
+ * @returns {{ path: string, project: string }|null}
+ */
+export function findLatestSessionJsonl(cwd = process.cwd()) {
+  try {
+    if (!existsSync(PROJECTS_DIR)) return null;
+    const preferred = projectSlug(cwd);
+    const candidates = [];
+    for (const projEntry of readdirSync(PROJECTS_DIR, { withFileTypes: true })) {
+      if (!projEntry.isDirectory()) continue;
+      const projDir = projEntry.name;
+      const dir = join(PROJECTS_DIR, projDir);
+      for (const name of readdirSync(dir).filter(f => f.endsWith('.jsonl'))) {
+        const path = join(dir, name);
+        const stat = safeStat(path);
+        if (!stat) continue;
+        candidates.push({
+          path,
+          project: projDir.replace(/^-/, '').replace(/-/g, '/'),
+          projectDir: projDir,
+          mtimeMs: stat.mtimeMs,
+        });
+      }
+    }
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => {
+      const preferA = a.projectDir === preferred ? 1 : 0;
+      const preferB = b.projectDir === preferred ? 1 : 0;
+      return preferB - preferA || b.mtimeMs - a.mtimeMs;
+    });
+    return { path: candidates[0].path, project: candidates[0].project };
+  } catch {
+    return null;
+  }
+}
+
+function safeStat(path) {
+  try { return statSync(path); }
+  catch { return null; }
+}
+
+function projectSlug(cwd) {
+  return String(cwd || '')
+    .replace(/[\\/]+/g, '-')
+    .replace(/^-+/, '-');
 }

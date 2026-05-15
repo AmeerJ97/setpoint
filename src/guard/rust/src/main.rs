@@ -1,4 +1,4 @@
-//! setpoint-guard — Rust replacement for src/guard/claude-quality-guard.sh.
+//! claude-ops-guard — Rust replacement for src/guard/claude-ops-guard.sh.
 //!
 //! Watches ~/.claude.json via inotify (notify crate) and re-applies the
 //! tengu_* GrowthBook overrides whenever the cache is mutated. Improvements
@@ -24,7 +24,7 @@ mod paths;
 mod watcher;
 
 fn print_usage(arg0: &str) {
-    eprintln!("setpoint-guard 2.0 — quality guard for Claude Code");
+    eprintln!("claude-ops-guard 2.0 — quality guard for Claude Code");
     eprintln!();
     eprintln!("Usage: {arg0} <command> [args]");
     eprintln!();
@@ -41,7 +41,7 @@ fn print_usage(arg0: &str) {
 }
 
 fn run(args: Vec<String>) -> Result<(), String> {
-    let arg0 = args.first().cloned().unwrap_or_else(|| "setpoint-guard".into());
+    let arg0 = args.first().cloned().unwrap_or_else(|| "claude-ops-guard".into());
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
 
     let p = paths::Paths::new();

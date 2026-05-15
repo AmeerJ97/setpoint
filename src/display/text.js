@@ -1,6 +1,6 @@
 /**
  * ANSI-aware grapheme text engine.
- * Ported from claude-hud's render/index.ts — handles grapheme segmentation,
+ * Ported from Claude Ops render/index.ts — handles grapheme segmentation,
  * East Asian wide characters, emoji ZWJ sequences, and ANSI escape codes.
  */
 

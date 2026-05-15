@@ -1,11 +1,18 @@
 /**
  * @typedef {object} StdinData
  * @property {string} [session_id]
+ * @property {string} [session_name]
  * @property {string} [transcript_path]
  * @property {string} [cwd]
+ * @property {{ current_dir?: string, project_dir?: string, added_dirs?: string[], git_worktree?: string }} [workspace]
  * @property {{ id?: string, display_name?: string }} [model]
- * @property {{ context_window_size?: number, used_percentage?: number|null, remaining_percentage?: number|null, current_usage?: { input_tokens?: number, output_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number }|null }} [context_window]
+ * @property {{ total_cost_usd?: number, total_duration_ms?: number, total_api_duration_ms?: number, total_lines_added?: number, total_lines_removed?: number }} [cost]
+ * @property {{ level?: string }} [effort]
+ * @property {boolean} [exceeds_200k_tokens]
+ * @property {{ context_window_size?: number, used_percentage?: number|null, usage_ratio?: number|null, remaining_percentage?: number|null, total_tokens?: number, total_input_tokens?: number, total_output_tokens?: number, total_thinking_tokens?: number, exceeds_200k_tokens?: boolean, current_usage?: { input_tokens?: number, output_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number }|null }} [context_window]
  * @property {{ five_hour?: { used_percentage?: number|null, resets_at?: number|null }|null, seven_day?: { used_percentage?: number|null, resets_at?: number|null }|null }|null} [rate_limits]
+ * @property {{ name?: string }} [agent]
+ * @property {{ name?: string, path?: string, branch?: string, original_cwd?: string, original_branch?: string }} [worktree]
  */
 
 /**
@@ -61,16 +68,62 @@ export async function readStdin() {
 }
 
 /**
+ * Normalize the current Claude Code statusLine context-window counters.
+ *
+ * `current_usage` is the current context-window mix, not cumulative billing.
+ * Prefer native total fields when present and only fall back to the older
+ * current_usage sum for legacy fixtures.
+ *
+ * @param {StdinData|null|undefined} stdin
+ * @returns {{ totalTokens:number, inputTokens:number, outputTokens:number, thinkingTokens:number, cacheCreateTokens:number, cacheReadTokens:number, contextWindowSize:number|null, exceeds200k:boolean }}
+ */
+export function getContextUsage(stdin) {
+  const cw = stdin?.context_window ?? {};
+  const usage = cw.current_usage ?? {};
+  const inputTokens = finite(cw.total_input_tokens) ?? finite(usage.input_tokens) ?? 0;
+  const outputTokens = finite(cw.total_output_tokens) ?? finite(usage.output_tokens) ?? 0;
+  const thinkingTokens = finite(cw.total_thinking_tokens) ?? 0;
+  const cacheCreateTokens = finite(usage.cache_creation_input_tokens) ?? 0;
+  const cacheReadTokens = finite(usage.cache_read_input_tokens) ?? 0;
+  const nativeTotal = finite(cw.total_tokens);
+  const legacyTotal = inputTokens + outputTokens + thinkingTokens + cacheCreateTokens + cacheReadTokens;
+
+  return {
+    totalTokens: nativeTotal ?? legacyTotal,
+    inputTokens,
+    outputTokens,
+    thinkingTokens,
+    cacheCreateTokens,
+    cacheReadTokens,
+    contextWindowSize: finite(cw.context_window_size),
+    exceeds200k: Boolean(cw.exceeds_200k_tokens ?? stdin?.exceeds_200k_tokens),
+  };
+}
+
+/**
+ * @param {StdinData|null|undefined} stdin
+ * @returns {{ costUsd:number|null, authority:'statusline-cost'|'missing' }}
+ */
+export function getStatusLineCost(stdin) {
+  const cost = finite(stdin?.cost?.total_cost_usd);
+  return { costUsd: cost, authority: cost == null ? 'missing' : 'statusline-cost' };
+}
+
+/**
+ * @param {StdinData|null|undefined} stdin
+ * @returns {string|null}
+ */
+export function getStatusLineEffort(stdin) {
+  const level = stdin?.effort?.level;
+  return typeof level === 'string' && level.trim() ? level.trim().toLowerCase() : null;
+}
+
+/**
  * @param {StdinData} stdin
  * @returns {number}
  */
 export function getTotalTokens(stdin) {
-  const usage = stdin.context_window?.current_usage;
-  return (
-    (usage?.input_tokens ?? 0) +
-    (usage?.cache_creation_input_tokens ?? 0) +
-    (usage?.cache_read_input_tokens ?? 0)
-  );
+  return getContextUsage(stdin).totalTokens;
 }
 
 /**
@@ -81,6 +134,11 @@ function getNativePercent(stdin) {
   const nativePercent = stdin.context_window?.used_percentage;
   if (typeof nativePercent === 'number' && !Number.isNaN(nativePercent)) {
     return Math.min(100, Math.max(0, Math.round(nativePercent)));
+  }
+  const ratio = stdin.context_window?.usage_ratio;
+  if (typeof ratio === 'number' && Number.isFinite(ratio)) {
+    const pct = ratio <= 1 ? ratio * 100 : ratio;
+    return Math.min(100, Math.max(0, Math.round(pct)));
   }
   return null;
 }
@@ -93,7 +151,7 @@ export function getContextPercent(stdin) {
   const native = getNativePercent(stdin);
   if (native !== null) return native;
 
-  const size = stdin.context_window?.context_window_size;
+  const size = getContextUsage(stdin).contextWindowSize;
   if (!size || size <= 0) return 0;
 
   const totalTokens = getTotalTokens(stdin);
@@ -108,7 +166,7 @@ export function getBufferedPercent(stdin) {
   const native = getNativePercent(stdin);
   if (native !== null) return native;
 
-  const size = stdin.context_window?.context_window_size;
+  const size = getContextUsage(stdin).contextWindowSize;
   if (!size || size <= 0) return 0;
 
   const totalTokens = getTotalTokens(stdin);
@@ -237,4 +295,13 @@ function readNumericVersion(tokens, startIndex, step) {
     if (parts.length === 2) break;
   }
   return parts;
+}
+
+function finite(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return null;
 }

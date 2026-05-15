@@ -2,9 +2,9 @@
  * Glyph resolver. Maps semantic glyph names to concrete characters
  * based on terminal policy:
  *
- *   SETPOINT_PLAIN=1 → ASCII-only fallbacks (for CI, logs, ssh
+ *   CLAUDE_OPS_PLAIN=1 → ASCII-only fallbacks (for CI, logs, ssh
  *                      sessions on terminals without Unicode fonts)
- *   SETPOINT_NERD=1  → opt-in Nerd-Font glyphs (branded icons,
+ *   CLAUDE_OPS_NERD=1  → opt-in Nerd-Font glyphs (branded icons,
  *                      powerline separators). Default: false.
  *   otherwise        → Unicode BMP (default; every modern Claude
  *                      Code user's terminal supports these)
@@ -12,7 +12,7 @@
  * Line renderers should use `g('check')` instead of literal '✓' when
  * they want the glyph to survive ASCII-only mode. Most block-element
  * characters (█ ░ ▁-▇) are BMP and don't need a fallback for default
- * usage; they're only mapped here for SETPOINT_PLAIN=1.
+ * usage; they're only mapped here for CLAUDE_OPS_PLAIN=1.
  */
 
 import { useNerdGlyphs, usePlainGlyphs } from './capability.js';
@@ -119,9 +119,9 @@ export function resetGlyphCache() {
  * Post-process a rendered line to downgrade any non-ASCII glyph that
  * has a PLAIN mapping. This lets line renderers use rich Unicode by
  * default without every renderer needing to call g() explicitly —
- * if SETPOINT_PLAIN=1 we sweep the output.
+ * if CLAUDE_OPS_PLAIN=1 we sweep the output.
  *
- * Only runs when SETPOINT_PLAIN is set; otherwise no-op.
+ * Only runs when CLAUDE_OPS_PLAIN is set; otherwise no-op.
  * @param {string} text
  * @returns {string}
  */
@@ -143,7 +143,16 @@ export function sanitizeForPlain(text) {
     '⏱': 't',   // clock → 't' for time
     '△': '^',   // warn triangle outline
     '▎': '|',   // heading chip
+    '·': '-',
+    '↓': 'v',
+    '↑': '^',
+    '╎': '|',
+    '◆': '*',
+    '◌': 'o',
+    '×': 'x',
   };
   for (const [u, a] of Object.entries(EXTRAS)) out = out.split(u).join(a);
-  return out;
+  return out
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, '?');
 }

@@ -8,13 +8,13 @@ test('NO_COLOR disables color even on truecolor TTY', () => {
   assert.equal(detectColorSupport(ctx({ NO_COLOR: '1', COLORTERM: 'truecolor', TERM: 'xterm-256color' })), 'none');
 });
 
-test('SETPOINT_PLAIN disables color', () => {
-  assert.equal(detectColorSupport(ctx({ SETPOINT_PLAIN: '1', COLORTERM: 'truecolor' })), 'none');
+test('CLAUDE_OPS_PLAIN disables color', () => {
+  assert.equal(detectColorSupport(ctx({ CLAUDE_OPS_PLAIN: '1', COLORTERM: 'truecolor' })), 'none');
 });
 
 test('Claude Code statusLine case: non-TTY with inherited COLORTERM still emits color', () => {
   // The parent shell sets COLORTERM=truecolor and TERM=tmux-256color;
-  // Claude Code spawns setpoint with stdout piped, so isTTY=false.
+  // Claude Code spawns claude-ops with stdout piped, so isTTY=false.
   // The user's terminal still renders the ANSI output.
   assert.equal(
     detectColorSupport(ctx({ COLORTERM: 'truecolor', TERM: 'tmux-256color' }, false)),
@@ -71,24 +71,24 @@ test('detectPalette default = rag (vivid)', () => {
   assert.equal(detectPalette(ctx({})), 'rag');
 });
 
-test('detectPalette honours SETPOINT_PALETTE=cividis', () => {
-  assert.equal(detectPalette(ctx({ SETPOINT_PALETTE: 'cividis' })), 'cividis');
-  assert.equal(detectPalette(ctx({ SETPOINT_PALETTE: 'CIVIDIS' })), 'cividis');
+test('detectPalette honours CLAUDE_OPS_PALETTE=cividis', () => {
+  assert.equal(detectPalette(ctx({ CLAUDE_OPS_PALETTE: 'cividis' })), 'cividis');
+  assert.equal(detectPalette(ctx({ CLAUDE_OPS_PALETTE: 'CIVIDIS' })), 'cividis');
 });
 
 test('detectPalette falls back to rag for unknown values', () => {
-  assert.equal(detectPalette(ctx({ SETPOINT_PALETTE: 'solarized' })), 'rag');
+  assert.equal(detectPalette(ctx({ CLAUDE_OPS_PALETTE: 'solarized' })), 'rag');
 });
 
-test('useNerdGlyphs respects SETPOINT_NERD truthy values', () => {
-  assert.equal(useNerdGlyphs(ctx({ SETPOINT_NERD: '1' })), true);
-  assert.equal(useNerdGlyphs(ctx({ SETPOINT_NERD: 'true' })), true);
-  assert.equal(useNerdGlyphs(ctx({ SETPOINT_NERD: '0' })), false);
-  assert.equal(useNerdGlyphs(ctx({ SETPOINT_NERD: 'no' })), false);
+test('useNerdGlyphs respects CLAUDE_OPS_NERD truthy values', () => {
+  assert.equal(useNerdGlyphs(ctx({ CLAUDE_OPS_NERD: '1' })), true);
+  assert.equal(useNerdGlyphs(ctx({ CLAUDE_OPS_NERD: 'true' })), true);
+  assert.equal(useNerdGlyphs(ctx({ CLAUDE_OPS_NERD: '0' })), false);
+  assert.equal(useNerdGlyphs(ctx({ CLAUDE_OPS_NERD: 'no' })), false);
   assert.equal(useNerdGlyphs(ctx({})), false);
 });
 
-test('usePlainGlyphs respects SETPOINT_PLAIN', () => {
-  assert.equal(usePlainGlyphs(ctx({ SETPOINT_PLAIN: '1' })), true);
+test('usePlainGlyphs respects CLAUDE_OPS_PLAIN', () => {
+  assert.equal(usePlainGlyphs(ctx({ CLAUDE_OPS_PLAIN: '1' })), true);
   assert.equal(usePlainGlyphs(ctx({})), false);
 });

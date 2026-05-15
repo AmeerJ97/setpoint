@@ -1,5 +1,5 @@
 /**
- * Named color palettes for setpoint.
+ * Named color palettes for claude-ops.
  *
  * Every palette exposes the same API:
  *   sample(t)        — t in [0,1], returns an RGB tuple (gradient)
@@ -10,7 +10,7 @@
  *   • Default palette is "cividis". Equally readable across the three
  *     common colorblindness types (viridis docs, davidmathlogic).
  *   • The "rag" palette preserves the v2.0 green→yellow→red behavior
- *     for users who prefer traditional semantics (SETPOINT_PALETTE=rag).
+ *     for users who prefer traditional semantics (CLAUDE_OPS_PALETTE=rag).
  *   • State colors are drawn from the Okabe-Ito qualitative palette,
  *     which is colorblind-safe without relying on red/green contrast.
  *

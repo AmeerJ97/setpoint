@@ -1,5 +1,5 @@
 [Unit]
-Description=Run Claude HUD Health Auditor daily
+Description=Run Claude Ops Health Auditor daily
 
 [Timer]
 OnCalendar=daily

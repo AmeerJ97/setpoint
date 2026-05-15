@@ -9,21 +9,21 @@ import { resetDefaultsCache } from '../data/defaults.js';
 // Pin defaults for peak-hour tests so behavior doesn't depend on the
 // machine's wall clock relative to the default 5–11 PT window.
 function withDefaults(blob, fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'setpoint-rates-'));
+  const dir = mkdtempSync(join(tmpdir(), 'claude-ops-rates-'));
   const file = join(dir, 'defaults.json');
   writeFileSync(file, JSON.stringify(blob));
-  process.env.CLAUDE_HUD_DEFAULTS_FILE = file;
+  process.env.CLAUDE_OPS_DEFAULTS_FILE = file;
   resetDefaultsCache();
   try { return fn(); }
   finally {
-    delete process.env.CLAUDE_HUD_DEFAULTS_FILE;
+    delete process.env.CLAUDE_OPS_DEFAULTS_FILE;
     resetDefaultsCache();
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 afterEach(() => {
-  delete process.env.CLAUDE_HUD_DEFAULTS_FILE;
+  delete process.env.CLAUDE_OPS_DEFAULTS_FILE;
   resetDefaultsCache();
 });
 

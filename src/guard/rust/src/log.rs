@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn write_appends_line_with_expected_shape() {
         let dir = std::env::temp_dir().join(format!(
-            "setpoint-guard-log-{}",
+            "claude-ops-guard-log-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn write_skips_empty_report() {
         let dir = std::env::temp_dir().join(format!(
-            "setpoint-guard-log-empty-{}",
+            "claude-ops-guard-log-empty-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

@@ -1,8 +1,11 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { CLAUDE_JSON_PATH } from './paths.js';
+import { formatParseError } from './errors.js';
 
 /**
  * Read and parse ~/.claude.json. Returns null on error.
+ * Logs the error for diagnostics so corrupt state is distinguishable
+ * from a missing file.
  * @param {string} [configPath]
  * @returns {object|null}
  */
@@ -10,7 +13,8 @@ export function readClaudeConfig(configPath = CLAUDE_JSON_PATH) {
   if (!existsSync(configPath)) return null;
   try {
     return JSON.parse(readFileSync(configPath, 'utf8'));
-  } catch {
+  } catch (err) {
+    formatParseError(`readClaudeConfig: failed to parse ${configPath}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
